@@ -1,0 +1,46 @@
+import { z } from "zod";
+
+export type UiDefault = "v1" | "v2";
+
+// Aceita bem mais coisa (passthrough) porque cada caderno pode evoluir sem quebrar.
+export const MetaSchemaLoose = z.object({
+  title: z.string().optional(),
+  slug: z.string().optional(),
+  ui: z.any().optional(),
+}).passthrough();
+
+export type MetaLoose = z.infer<typeof MetaSchemaLoose>;
+
+export function safeJsonParse(text: string): unknown {
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+// meta.ui.default pode ser string OU function (legado).
+export function resolveUiDefault(uiDefault: unknown): UiDefault | undefined {
+  if (uiDefault === "v1" || uiDefault === "v2") return uiDefault;
+  if (typeof uiDefault === "function") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      const v = (uiDefault as any)();
+      if (v === "v1" || v === "v2") return v;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+export function parseMetaLoose(input: unknown, fallbackSlug?: string): MetaLoose {
+  const res = MetaSchemaLoose.safeParse(input);
+  if (res.success) {
+    const m: MetaLoose = res.data;
+    if (fallbackSlug && !m.slug) return { ...m, slug: fallbackSlug };
+    return m;
+  }
+  // fallback mínimo (não quebra UI)
+  return {
+    slug: fallbackSlug,
+    title: fallbackSlug || "Caderno",
+    ui: { default: "v1" },
+  };
+}

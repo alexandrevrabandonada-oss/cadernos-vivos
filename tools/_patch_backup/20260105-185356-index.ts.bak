@@ -4,4 +4,3 @@ export * from "./load";
 
 export { loadCadernoV2 } from './load';
 export * from "./trilhas";
-export * from "./contract";

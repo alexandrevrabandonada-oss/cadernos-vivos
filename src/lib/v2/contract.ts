@@ -1,0 +1,56 @@
+import { z } from "zod";
+import type { UiDefault } from "./types";
+
+// Aceita bem mais coisa (passthrough) porque cada caderno pode evoluir sem quebrar.
+export const MetaSchemaLoose = z.object({
+  title: z.string().optional(),
+  slug: z.string().optional(),
+  ui: z.unknown().optional(),
+}).passthrough();
+
+export type MetaLoose = z.infer<typeof MetaSchemaLoose>;
+
+export function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function isUiDefault(v: unknown): v is UiDefault {
+  return v === "v1" || v === "v2";
+}
+
+// meta.ui.default pode ser string OU function (legado).
+export function resolveUiDefault(uiDefault: unknown): UiDefault | undefined {
+  if (isUiDefault(uiDefault)) return uiDefault;
+
+  if (typeof uiDefault === "function") {
+    try {
+      const fn = uiDefault as unknown as (() => unknown);
+      const v = fn();
+      if (isUiDefault(v)) return v;
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+export function parseMetaLoose(input: unknown, fallbackSlug?: string): MetaLoose {
+  const res = MetaSchemaLoose.safeParse(input);
+  if (res.success) {
+    const m: MetaLoose = res.data;
+    if (fallbackSlug && !m.slug) return { ...m, slug: fallbackSlug };
+    return m;
+  }
+
+  // fallback mínimo (não quebra UI)
+  return {
+    slug: fallbackSlug,
+    title: fallbackSlug || "Caderno",
+    ui: { default: "v1" },
+  };
+}
