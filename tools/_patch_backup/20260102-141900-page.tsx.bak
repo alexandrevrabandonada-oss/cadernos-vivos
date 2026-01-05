@@ -1,0 +1,27 @@
+import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
+import Quiz from "@/components/Quiz";
+import CadernoShell from "@/components/CadernoShell";
+import { notFound } from "next/navigation";
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await getCaderno(slug);let data: Awaited<ReturnType<typeof getCaderno>>;
+  const data = await getCaderno(slug);try {
+  const data = await getCaderno(slug);  data = await getCaderno(slug);
+  const data = await getCaderno(slug);} catch (e) {
+  const data = await getCaderno(slug);  const err = e as { code?: string };
+  const data = await getCaderno(slug);  if (err && err.code === "ENOENT") return notFound();
+  const data = await getCaderno(slug);  throw e;
+  const data = await getCaderno(slug);}
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+  return (
+    <CadernoShell title={data.meta.title} subtitle={data.meta.subtitle} ethos={data.meta.ethos} style={s}>
+<div className="card p-5">
+        <h2 className="text-xl font-semibold">Quiz</h2>
+        <p className="muted mt-2">Sem tribunal: o quiz é só ferramenta de revisão.</p>
+      </div>
+      <Quiz qs={data.quiz} />
+    </CadernoShell>
+  );
+}

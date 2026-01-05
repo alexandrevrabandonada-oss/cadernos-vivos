@@ -1,0 +1,85 @@
+export function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, '&#39;');
+}
+
+function inline(md: string): string {
+  // já vem escapado; aplicamos marcações simples
+  let s = md;
+  // code
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  // bold
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // italic (simples)
+  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  // links [t](u)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a href=\\"$2\\" target=\\"_blank\\" rel=\\"noreferrer\\">$1</a>");
+  return s;
+}
+
+export function simpleMarkdownToHtml(mdRaw: string): string {
+  const md = (mdRaw || "").replace(/\\r\\n/g, "\\n");
+  const lines = md.split("\\n");
+  let html = "";
+  let inList = false;
+
+  const closeList = () => {
+    if (inList) { html += "</ul>"; inList = false; }
+  };
+
+  for (const rawLine of lines) {
+    const line0 = rawLine || "";
+    const line = line0.trimEnd();
+    if (!line.trim()) {
+      closeList();
+      html += "<div class=\\"cv-md-gap\\"></div>";
+      continue;
+    }
+
+    // hr
+    if (line.trim() === "---") {
+      closeList();
+      html += "<hr />";
+      continue;
+    }
+
+    // headings
+    const mH = /^(#{1,6})\\s+(.+)$/.exec(line);
+    if (mH) {
+      closeList();
+      const level = mH[1].length;
+      const txt = inline(escapeHtml(mH[2]));
+      html += "<h" + level + ">" + txt + "</h" + level + ">";
+      continue;
+    }
+
+    // blockquote
+    const mQ = /^>\\s?(.+)$/.exec(line);
+    if (mQ) {
+      closeList();
+      const txt = inline(escapeHtml(mQ[1]));
+      html += "<blockquote><p>" + txt + "</p></blockquote>";
+      continue;
+    }
+
+    // list
+    const mL = /^-\\s+(.+)$/.exec(line);
+    if (mL) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      const txt = inline(escapeHtml(mL[1]));
+      html += "<li>" + txt + "</li>";
+      continue;
+    }
+
+    // paragraph
+    closeList();
+    html += "<p>" + inline(escapeHtml(line)) + "</p>";
+  }
+
+  closeList();
+  return html;
+}

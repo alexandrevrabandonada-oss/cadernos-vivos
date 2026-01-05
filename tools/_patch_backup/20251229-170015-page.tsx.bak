@@ -1,0 +1,19 @@
+import V2Nav from "@/components/v2/V2Nav";
+import TimelineV2 from "@/components/v2/TimelineV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const c = await loadCadernoV2(slug);
+  const title = c.title;
+  const mapa = c.mapa;
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto" }}>
+      <V2Nav slug={slug} active="linha-do-tempo" />
+      <div style={{ marginTop: 12 }}>
+        <TimelineV2 slug={slug} title={title} mapa={mapa} />
+      </div>
+    </main>
+  );
+}

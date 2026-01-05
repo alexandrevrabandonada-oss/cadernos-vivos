@@ -1,0 +1,453 @@
+"use client";
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [k: string]: JsonValue };
+
+type MapNode = {
+  id: string;
+  label: string;
+  type: string;
+  x: number | null;
+  y: number | null;
+  data: Record<string, JsonValue>;
+};
+
+type MapEdge = {
+  from: string;
+  to: string;
+  kind: string;
+  label: string | null;
+};
+
+type View = { x: number; y: number; s: number };
+type Pt = { x: number; y: number };
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asNum(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+function asArr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+function asJsonObj(v: unknown): Record<string, JsonValue> {
+  if (!isObj(v)) return {};
+  const out: Record<string, JsonValue> = {};
+  for (const k of Object.keys(v)) {
+    const val = (v as Record<string, unknown>)[k];
+    // best-effort: só aceita coisas serializáveis; caso contrário ignora
+    if (val === null || typeof val === "string" || typeof val === "number" || typeof val === "boolean") out[k] = val;
+    else if (Array.isArray(val)) out[k] = val as unknown as JsonValue;
+    else if (isObj(val)) out[k] = val as unknown as JsonValue;
+  }
+  return out;
+}
+
+function parseMapa(input: unknown): { nodes: MapNode[]; edges: MapEdge[] } {
+  if (!isObj(input)) return { nodes: [], edges: [] };
+  const nodesRaw = asArr((input as Record<string, unknown>)["nodes"]);
+  const edgesRaw = asArr((input as Record<string, unknown>)["edges"]);
+
+  const nodes: MapNode[] = [];
+  for (const n of nodesRaw) {
+    if (!isObj(n)) continue;
+    const id = asStr(n["id"]) || "";
+    if (!id) continue;
+    const label = asStr(n["label"]) || asStr(n["title"]) || id;
+    const type = asStr(n["type"]) || "note";
+    const x = asNum(n["x"]);
+    const y = asNum(n["y"]);
+    const data = asJsonObj(n["data"]);
+    // sugar: copia alguns campos diretos pro data (se existirem)
+    const text = asStr(n["text"]);
+    if (text) data["text"] = text;
+    const tags = n["tags"];
+    if (Array.isArray(tags)) data["tags"] = tags as unknown as JsonValue;
+    nodes.push({ id, label, type, x, y, data });
+  }
+
+  const edges: MapEdge[] = [];
+  for (const e of edgesRaw) {
+    if (!isObj(e)) continue;
+    const from = asStr(e["from"]) || "";
+    const to = asStr(e["to"]) || "";
+    if (!from || !to) continue;
+    const kind = asStr(e["kind"]) || "link";
+    const label = asStr(e["label"]);
+    edges.push({ from, to, kind, label });
+  }
+
+  return { nodes, edges };
+}
+
+function clamp(v: number, a: number, b: number): number {
+  return Math.max(a, Math.min(b, v));
+}
+
+function worldToScreen(p: Pt, view: View): Pt {
+  return { x: (p.x + view.x) * view.s, y: (p.y + view.y) * view.s };
+}
+function screenToWorld(p: Pt, view: View): Pt {
+  return { x: p.x / view.s - view.x, y: p.y / view.s - view.y };
+}
+
+function layout(nodes: MapNode[]): Record<string, Pt> {
+  // usa x/y se existirem; senão, grid compacto
+  const pos: Record<string, Pt> = {};
+  const fallback: MapNode[] = [];
+  for (const n of nodes) {
+    if (typeof n.x === "number" && typeof n.y === "number") pos[n.id] = { x: n.x, y: n.y };
+    else fallback.push(n);
+  }
+  const cols = Math.max(3, Math.ceil(Math.sqrt(fallback.length || 1)));
+  const gapX = 180;
+  const gapY = 120;
+  for (let i = 0; i < fallback.length; i++) {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const x = c * gapX;
+    const y = r * gapY;
+    pos[fallback[i].id] = { x, y };
+  }
+  return pos;
+}
+
+function uniq<T>(arr: T[]): T[] {
+  const out: T[] = [];
+  for (const it of arr) if (!out.includes(it)) out.push(it);
+  return out;
+}
+
+export default function MapaCanvasV2(props: { slug: string; title: string; mapa: unknown }) {
+  const { nodes, edges } = useMemo(() => parseMapa(props.mapa), [props.mapa]);
+  const positions = useMemo(() => layout(nodes), [nodes]);
+
+  const types = useMemo(() => uniq(nodes.map((n) => n.type)).sort(), [nodes]);
+
+  const [filter, setFilter] = useState<string>("all");
+  const [q, setQ] = useState<string>("");
+  const [showEdges, setShowEdges] = useState<boolean>(true);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [view, setView] = useState<View>({ x: 40, y: 40, s: 1 });
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ on: boolean; at: Pt; v0: View } | null>(null);
+
+  const filteredNodes = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return nodes.filter((n) => {
+      if (filter !== "all" && n.type !== filter) return false;
+      if (!qq) return true;
+      return (n.label || "").toLowerCase().includes(qq) || n.id.toLowerCase().includes(qq);
+    });
+  }, [nodes, filter, q]);
+
+  const idSet = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes]);
+  const filteredEdges = useMemo(() => edges.filter((e) => idSet.has(e.from) && idSet.has(e.to)), [edges, idSet]);
+
+  const selectedNode = useMemo(() => (selected ? nodes.find((n) => n.id === selected) || null : null), [nodes, selected]);
+  const selectedLinks = useMemo(() => {
+    if (!selected) return [];
+    const out: string[] = [];
+    for (const e of edges) {
+      if (e.from === selected) out.push(e.to);
+      else if (e.to === selected) out.push(e.from);
+    }
+    return uniq(out);
+  }, [edges, selected]);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    const cv = canvasRef.current;
+    if (!el || !cv) return;
+
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      cv.width = Math.max(1, Math.floor(r.width));
+      cv.height = Math.max(1, Math.floor(r.height));
+      draw();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    draw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredNodes, filteredEdges, positions, view, selected, showEdges]);
+
+  function draw() {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, cv.width, cv.height);
+
+    // fundo leve
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // grid
+    const step = 60 * view.s;
+    if (step > 14) {
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 1;
+      const ox = (view.x * view.s) % step;
+      const oy = (view.y * view.s) % step;
+      for (let x = -ox; x < cv.width; x += step) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height); ctx.stroke();
+      }
+      for (let y = -oy; y < cv.height; y += step) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cv.width, y); ctx.stroke();
+      }
+    }
+
+    // edges
+    if (showEdges) {
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 2;
+      for (const e of filteredEdges) {
+        const a = positions[e.from];
+        const b = positions[e.to];
+        if (!a || !b) continue;
+        const sa = worldToScreen(a, view);
+        const sb = worldToScreen(b, view);
+        ctx.beginPath();
+        ctx.moveTo(sa.x, sa.y);
+        ctx.lineTo(sb.x, sb.y);
+        ctx.stroke();
+      }
+    }
+
+    // nodes
+    for (const n of filteredNodes) {
+      const p = positions[n.id];
+      if (!p) continue;
+      const s = worldToScreen(p, view);
+      const isSel = selected === n.id;
+      const r = isSel ? 18 : 14;
+
+      ctx.fillStyle = isSel ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.14)";
+      ctx.strokeStyle = isSel ? "rgba(255,255,255,0.60)" : "rgba(255,255,255,0.28)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // label
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+      ctx.textBaseline = "top";
+      const txt = n.label.length > 28 ? n.label.slice(0, 28) + "…" : n.label;
+      ctx.fillText(txt, s.x + r + 8, s.y - 8);
+    }
+  }
+
+  function pickNode(screen: Pt): string | null {
+    const w = screenToWorld(screen, view);
+    let best: { id: string; d: number } | null = null;
+    for (const n of filteredNodes) {
+      const p = positions[n.id];
+      if (!p) continue;
+      const dx = w.x - p.x;
+      const dy = w.y - p.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d <= 20 && (!best || d < best.d)) best = { id: n.id, d };
+    }
+    return best ? best.id : null;
+  }
+
+  function onDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const pt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    dragRef.current = { on: true, at: pt, v0: view };
+  }
+  function onMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    const dr = dragRef.current;
+    if (!dr || !dr.on) return;
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const pt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const dx = (pt.x - dr.at.x) / dr.v0.s;
+    const dy = (pt.y - dr.at.y) / dr.v0.s;
+    setView({ x: dr.v0.x + dx, y: dr.v0.y + dy, s: dr.v0.s });
+  }
+  function onUp(e: React.MouseEvent<HTMLCanvasElement>) {
+    const dr = dragRef.current;
+    dragRef.current = null;
+    if (!dr) return;
+
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const pt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const moved = Math.abs(pt.x - dr.at.x) + Math.abs(pt.y - dr.at.y);
+    if (moved < 4) {
+      const hit = pickNode(pt);
+      setSelected(hit);
+    }
+  }
+  function onWheel(e: React.WheelEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLCanvasElement).getBoundingClientRect();
+    const pt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const before = screenToWorld(pt, view);
+    const nextS = clamp(view.s * (e.deltaY > 0 ? 0.9 : 1.1), 0.4, 2.8);
+    const nextView: View = { ...view, s: nextS };
+    const after = screenToWorld(pt, nextView);
+    // mantém o ponto embaixo do mouse fixo ao zoomar
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    setView({ x: view.x + dx, y: view.y + dy, s: nextS });
+  }
+
+  const panelText = useMemo(() => {
+    if (!selectedNode) return "";
+    const raw = selectedNode.data["text"];
+    return typeof raw === "string" ? raw : "";
+  }, [selectedNode]);
+
+  const panelTags = useMemo(() => {
+    if (!selectedNode) return [];
+    const raw = selectedNode.data["tags"];
+    if (!Array.isArray(raw)) return [];
+    const out: string[] = [];
+    for (const t of raw) if (typeof t === "string") out.push(t);
+    return out.slice(0, 12);
+  }, [selectedNode]);
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "stretch" }}>
+      <div style={{ flex: "1 1 640px", minHeight: 520, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, overflow: "hidden", position: "relative" }}>
+        <div ref={wrapRef} style={{ width: "100%", height: 520, position: "relative" }}>
+          <canvas
+            ref={canvasRef}
+            style={{ width: "100%", height: "100%", display: "block", cursor: "grab" }}
+            onMouseDown={onDown}
+            onMouseMove={onMove}
+            onMouseUp={onUp}
+            onMouseLeave={onUp}
+            onWheel={onWheel}
+          />
+        </div>
+
+        {/* Dock */}
+        <div style={{
+          position: "absolute", left: 12, right: 12, bottom: 12,
+          border: "1px solid rgba(255,255,255,0.14)",
+          borderRadius: 14, padding: 10,
+          background: "rgba(0,0,0,0.35)",
+          backdropFilter: "blur(6px)",
+          display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center"
+        }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button onClick={() => setFilter("all")} style={{
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: filter === "all" ? "rgba(255,255,255,0.18)" : "transparent",
+              color: "rgba(255,255,255,0.9)",
+              borderRadius: 999, padding: "6px 10px", fontSize: 12
+            }}>Tudo</button>
+            {types.map((t) => (
+              <button key={t} onClick={() => setFilter(t)} style={{
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: filter === t ? "rgba(255,255,255,0.18)" : "transparent",
+                color: "rgba(255,255,255,0.9)",
+                borderRadius: 999, padding: "6px 10px", fontSize: 12
+              }}>{t}</button>
+            ))}
+          </div>
+
+          <div style={{ flex: "1 1 240px", display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="buscar nó..."
+              style={{
+                width: "100%",
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "rgba(0,0,0,0.25)",
+                color: "rgba(255,255,255,0.9)",
+                borderRadius: 12, padding: "8px 10px", fontSize: 12
+              }}
+            />
+            <button onClick={() => setShowEdges((v) => !v)} style={{
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: showEdges ? "rgba(255,255,255,0.14)" : "transparent",
+              color: "rgba(255,255,255,0.9)",
+              borderRadius: 12, padding: "8px 10px", fontSize: 12, whiteSpace: "nowrap"
+            }}>{showEdges ? "fios: ON" : "fios: OFF"}</button>
+          </div>
+
+          <div style={{ opacity: 0.7, fontSize: 12, whiteSpace: "nowrap" }}>
+            nós: <b>{filteredNodes.length}</b> • fios: <b>{filteredEdges.length}</b> • zoom: <b>{Math.round(view.s * 100)}%</b>
+          </div>
+        </div>
+      </div>
+
+      {/* Painel lateral */}
+      <aside style={{ flex: "0 1 340px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900, letterSpacing: "-0.01em" }}>Painel</h2>
+          <div style={{ opacity: 0.65, fontSize: 12 }}>Mapa V2 • {props.title}</div>
+        </div>
+
+        {!selectedNode ? (
+          <p style={{ marginTop: 10, opacity: 0.75 }}>Clique em um nó no mapa para ver detalhes aqui.</p>
+        ) : (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ opacity: 0.7, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>{selectedNode.type}</div>
+            <div style={{ marginTop: 6, fontSize: 18, fontWeight: 900, letterSpacing: "-0.02em" }}>{selectedNode.label}</div>
+            <div style={{ marginTop: 6, opacity: 0.65, fontSize: 12 }}>id: {selectedNode.id}</div>
+
+            {panelTags.length ? (
+              <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {panelTags.map((t) => (
+                  <span key={t} style={{ border: "1px solid rgba(255,255,255,0.14)", borderRadius: 999, padding: "4px 8px", fontSize: 12, opacity: 0.85 }}>{t}</span>
+                ))}
+              </div>
+            ) : null}
+
+            {panelText ? (
+              <div style={{ marginTop: 10, borderTop: "1px solid rgba(255,255,255,0.10)", paddingTop: 10, opacity: 0.9, lineHeight: 1.5, fontSize: 13, whiteSpace: "pre-wrap" }}>
+                {panelText}
+              </div>
+            ) : (
+              <div style={{ marginTop: 10, opacity: 0.75, fontSize: 13 }}>Sem texto (adicione node.text ou node.data.text no mapa.json).</div>
+            )}
+
+            {selectedLinks.length ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ opacity: 0.7, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>conexões</div>
+                <ul style={{ marginTop: 8, paddingLeft: 18, opacity: 0.9, fontSize: 13 }}>
+                  {selectedLinks.slice(0, 12).map((id) => (
+                    <li key={id}><button onClick={() => setSelected(id)} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.92)", textDecoration: "underline", cursor: "pointer", padding: 0 }}>{id}</button></li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => setSelected(null)} style={{
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "transparent", color: "rgba(255,255,255,0.9)",
+                borderRadius: 12, padding: "8px 10px", fontSize: 12
+              }}>limpar seleção</button>
+              <button onClick={() => setView({ x: 40, y: 40, s: 1 })} style={{
+                border: "1px solid rgba(255,255,255,0.18)",
+                background: "transparent", color: "rgba(255,255,255,0.9)",
+                borderRadius: 12, padding: "8px 10px", fontSize: 12
+              }}>reset view</button>
+            </div>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}

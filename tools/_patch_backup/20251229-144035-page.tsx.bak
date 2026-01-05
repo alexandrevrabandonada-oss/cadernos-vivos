@@ -1,0 +1,28 @@
+import V2Nav from "@/components/v2/V2Nav";
+import HomeV2 from "@/components/v2/HomeV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+function asObj(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+function asStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const data: unknown = await loadCadernoV2(slug);
+  const root = asObj(data);
+  const meta = root ? asObj(root["meta"]) : null;
+  const title = (meta && asStr(meta["title"]).trim().length) ? asStr(meta["title"]) : "Caderno";
+  const panorama = root ? root["panorama"] : null;
+
+  return (
+    <main style={{ padding: 16 }}>
+      <V2Nav slug={slug} active="home" />
+      <section style={{ marginTop: 14 }}>
+        <HomeV2 slug={slug} title={title} panorama={panorama} />
+      </section>
+    </main>
+  );
+}

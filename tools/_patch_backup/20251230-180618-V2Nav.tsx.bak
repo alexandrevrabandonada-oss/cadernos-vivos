@@ -1,0 +1,52 @@
+import Link from "next/link";
+
+export default function V2Nav(props: { slug: string; active?: string }) {
+  const slug = props.slug;
+  const active = props.active ?? "";
+  const base = "/c/" + slug + "/v2";
+
+  const items = [
+    { key: "v2", label: "V2 Home", href: base },
+    { key: "mapa", label: "Mapa", href: base + "/mapa" },
+    { key: "linha", label: "Linha", href: base + "/linha" },
+    { key: "debate", label: "Debate", href: base + "/debate" },
+    { key: "provas", label: "Provas", href: base + "/provas" },
+    { key: "trilhas", label: "Trilhas", href: base + "/trilhas" },
+    { key: "v1", label: "V1", href: "/c/" + slug },
+  ];
+
+  return (
+    <nav style={{
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      alignItems: "center",
+      marginBottom: 12,
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(0,0,0,0.20)",
+    }}>
+      {items.map((it) => {
+        const on = active === it.key;
+        return (
+          <Link
+            key={it.href}
+            href={it.href}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.14)",
+              textDecoration: "none",
+              color: "white",
+              background: on ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.18)",
+              fontWeight: on ? 800 : 650,
+            }}
+          >
+            {it.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}

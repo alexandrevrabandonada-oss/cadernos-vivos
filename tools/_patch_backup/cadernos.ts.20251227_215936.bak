@@ -1,0 +1,84 @@
+import fs from "fs/promises";
+import path from "path";
+import { z } from "zod";
+import { parseCadernoJson, parseMapaJson, parseDebateJson, parseAcervoJson } from "@/lib/schemas";
+
+const CadernoMeta = z.object({
+  slug: z.string(),
+  title: z.string(),
+  subtitle: z.string().optional(),
+  accent: z.string().default("#ffd200"),
+  ethos: z.string().optional(),
+});
+export type CadernoMeta = z.infer<typeof CadernoMeta>;
+
+export type Flashcard = { q: string; a: string };
+export type QuizQ = { q: string; choices: string[]; answer: number };
+export type AcervoItem = { file: string; title: string; kind: string; tags?: string[] };
+export type DebatePrompt = { id: string; title: string; prompt: string };
+
+function rootContent() {
+  return path.join(process.cwd(), "content", "cadernos");
+}
+
+export async function listCadernos(): Promise<CadernoMeta[]> {
+  const base = rootContent();
+  const dirs = await fs.readdir(base, { withFileTypes: true });
+  const slugs = dirs.filter((d) => d.isDirectory()).map((d) => d.name);
+  const items: CadernoMeta[] = [];
+  for (const slug of slugs) {
+    const metaPath = path.join(base, slug, "caderno.json");
+    const raw = await fs.readFile(metaPath, "utf8");
+    items.push(CadernoMeta.parse(parseCadernoJson(raw)));
+  }
+  return items.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export async function getCaderno(slug: string) {
+  const base = rootContent();
+  const metaPath = path.join(base, slug, "caderno.json");
+  const panoramaPath = path.join(base, slug, "panorama.md");
+  const refsPath = path.join(base, slug, "referencias.md");
+const trilhaPath = path.join(base, slug, "trilha.md");
+const debatePath = path.join(base, slug, "debate.json");
+  const aulasDir = path.join(base, slug, "aulas");
+  const praticaFlash = path.join(base, slug, "pratica", "flashcards.json");
+  const praticaQuiz = path.join(base, slug, "pratica", "quiz.json");
+const acervoPath = path.join(base, slug, "acervo.json");
+
+  const meta = CadernoMeta.parse(JSON.parse(await fs.readFile(metaPath, "utf8")));
+  const panorama = await fs.readFile(panoramaPath, "utf8");
+  let referencias = "";
+  try { referencias = await fs.readFile(refsPath, "utf8"); } catch {}
+
+  const aulas = (await fs.readdir(aulasDir))
+    .filter((f) => f.endsWith(".md"))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  let flashcards: Flashcard[] = [];
+  let quiz: QuizQ[] = [];
+let trilha = "";
+let debate: DebatePrompt[] = [];
+let acervo: AcervoItem[] = [];
+  try { flashcards = JSON.parse(await fs.readFile(praticaFlash, "utf8")); } catch {}
+  try { quiz = JSON.parse(await fs.readFile(praticaQuiz, "utf8")); } catch {}
+try { trilha = await fs.readFile(trilhaPath, "utf8"); } catch { trilha = ""; }
+try { debate = JSON.parse(await fs.readFile(debatePath, "utf8")); } catch { debate = []; }
+try { acervo = JSON.parse(await fs.readFile(acervoPath, "utf8")); } catch {}
+
+  return { meta, panorama, referencias, aulas, flashcards, quiz, acervo, trilha, debate };
+}
+
+export async function getAula(slug: string, aula: string) {
+  const p = path.join(rootContent(), slug, "aulas", aula + ".md");
+  const markdown = await fs.readFile(p, "utf8");
+  return { aula, markdown };
+}
+
+// cv-keep-parsers: mantém helpers referenciados (evita ruído no lint) até ligarmos no motor
+function __cv_keep_parsers() {
+  void parseMapaJson;
+  void parseDebateJson;
+  void parseAcervoJson;
+}
+__cv_keep_parsers();

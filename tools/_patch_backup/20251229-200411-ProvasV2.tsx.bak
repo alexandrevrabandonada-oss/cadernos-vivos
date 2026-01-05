@@ -1,0 +1,213 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+
+type AnyObj = Record<string, unknown>;
+
+function isObj(v: unknown): v is AnyObj {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asBool(v: unknown): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+function asStrArr(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(asStr).filter((x): x is string => !!x);
+  const s = asStr(v);
+  if (!s) return [];
+  return s.split(",").map((x) => x.trim()).filter(Boolean);
+}
+function getFirst(obj: AnyObj, keys: string[]): unknown {
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+  }
+  return undefined;
+}
+
+type ProofItem = {
+  id: string;
+  title: string;
+  url: string | null;
+  excerpt: string | null;
+  tags: string[];
+  kind: string;
+};
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  if (!h) return "";
+  const v = h.startsWith("#") ? h.slice(1) : h;
+  try { return decodeURIComponent(v); } catch { return v; }
+}
+function toDomId(id: string): string {
+  return ("p-" + id).replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+function extractItems(acervo: unknown): AnyObj[] {
+  if (Array.isArray(acervo)) return acervo.filter(isObj);
+  if (isObj(acervo)) {
+    const items = (acervo as AnyObj).items;
+    if (Array.isArray(items)) return items.filter(isObj);
+    const list = (acervo as AnyObj).list;
+    if (Array.isArray(list)) return list.filter(isObj);
+    const vals = Object.values(acervo).filter(isObj) as AnyObj[];
+    if (vals.length > 0) return vals;
+  }
+  return [];
+}
+
+function isLikelyProof(obj: AnyObj): boolean {
+  const kind = (asStr(getFirst(obj, ["kind","type"])) ?? "").toLowerCase();
+  const isProof = asBool(getFirst(obj, ["isProof","proof","prova"])) ?? false;
+  const tags = asStrArr(getFirst(obj, ["tags","tag","labels"])).map((t) => t.toLowerCase());
+  if (isProof) return true;
+  if (kind.includes("prova") || kind.includes("evidence") || kind.includes("fonte")) return true;
+  if (tags.includes("prova") || tags.includes("evidencia") || tags.includes("evidence") || tags.includes("fonte")) return true;
+  return false;
+}
+
+function toProof(obj: AnyObj, idx: number): ProofItem {
+  const id = asStr(getFirst(obj, ["id","slug","key","uid"])) ?? ("item-" + String(idx));
+  const title = asStr(getFirst(obj, ["title","name","label"])) ?? id;
+  const url = asStr(getFirst(obj, ["url","href","link","src"])) ?? null;
+  const excerpt = asStr(getFirst(obj, ["excerpt","resumo","summary","desc","description","texto"])) ?? null;
+  const tags = asStrArr(getFirst(obj, ["tags","tag","labels"]));
+  const kind = asStr(getFirst(obj, ["kind","type"])) ?? "item";
+  return { id, title, url, excerpt, tags, kind };
+}
+
+export default function ProvasV2(props: { slug: string; title?: string; acervo?: unknown }) {
+  const slug = props.slug;
+  const title = props.title ?? slug;
+
+  const items = useMemo(() => {
+    const arr = extractItems(props.acervo);
+    const mapped = arr.map((o, i) => toProof(o, i));
+    const only = mapped.filter((x, i) => isLikelyProof(arr[i] as AnyObj));
+    return only.length > 0 ? only : mapped;
+  }, [props.acervo]);
+
+  const [focus, setFocus] = useState<string>(() => readHashId());
+  const [copied, setCopied] = useState<string>("");
+
+  useEffect(() => {
+    const onHash = () => setFocus(readHashId());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  useEffect(() => {
+    if (!focus) return;
+    const el = document.getElementById(toDomId(focus));
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focus]);
+
+  const base = typeof window !== "undefined" ? window.location.origin : "";
+
+  return (
+    <section style={{ padding: 12 }}>
+      <div style={{ marginBottom: 12, opacity: 0.9 }}>
+        <div style={{ fontSize: 13, opacity: 0.85 }}>Caderno</div>
+        <h1 style={{ fontSize: 22, margin: "2px 0 0 0" }}>{title}</h1>
+        <div style={{ fontSize: 13, opacity: 0.8, marginTop: 6 }}>
+          Provas e fontes em cards. Use o hash no link (ex: #id) para focar um item.
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <div style={{ opacity: 0.8, padding: 12, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10 }}>
+          Nenhum item encontrado no acervo.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {items.map((it) => {
+            const domId = toDomId(it.id);
+            const isFocus = focus && (focus === it.id);
+            const shareUrl = base + "/c/" + slug + "/v2/provas#" + encodeURIComponent(it.id);
+
+            return (
+              <article
+                key={it.id}
+                id={domId}
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  borderRadius: 12,
+                  padding: 12,
+                  background: isFocus ? "rgba(255,255,255,0.06)" : "transparent",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>{it.kind}</div>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>{it.id}</div>
+                </div>
+
+                <h2 style={{ margin: "6px 0 0 0", fontSize: 18 }}>{it.title}</h2>
+
+                {it.excerpt ? (
+                  <p style={{ margin: "8px 0 0 0", opacity: 0.9, lineHeight: 1.45 }}>
+                    {it.excerpt}
+                  </p>
+                ) : null}
+
+                {it.tags.length > 0 ? (
+                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {it.tags.map((t, i) => (
+                      <span
+                        key={t + String(i)}
+                        style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)", opacity: 0.9 }}
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <Link href={"/c/" + slug + "/v2/linha#" + encodeURIComponent(it.id)} style={{ textDecoration: "underline", opacity: 0.9 }}>
+                    Ver na Linha
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(shareUrl);
+                        setCopied(it.id);
+                        const el = document.getElementById(domId);
+                        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                        setTimeout(() => setCopied(""), 1200);
+                      } catch {
+                        /* noop */
+                      }
+                    }}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "transparent",
+                      color: "inherit",
+                      borderRadius: 10,
+                      padding: "6px 10px",
+                      cursor: "pointer",
+                      opacity: 0.95,
+                    }}
+                  >
+                    {copied === it.id ? "Copiado" : "Copiar link"}
+                  </button>
+
+                  {it.url ? (
+                    <a href={it.url} target="_blank" rel="noreferrer" style={{ textDecoration: "underline", opacity: 0.95 }}>
+                      Abrir fonte
+                    </a>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}

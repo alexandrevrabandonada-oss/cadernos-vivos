@@ -1,0 +1,273 @@
+"use client";
+
+import React, { useMemo, useState } from "react";
+
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [k: string]: JsonValue };
+
+type TLItem = {
+  id: string;
+  title: string;
+  kind: string | null;
+  tags: string[];
+  date: string | null;
+  note: string | null;
+  url: string | null;
+};
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asArr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+function safeId(v: string, fallback: string): string {
+  const s = (v || "").trim();
+  if (!s) return fallback;
+  return s.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase() || fallback;
+}
+
+function uniq(arr: string[]): string[] {
+  const s = new Set<string>();
+  for (const x of arr) if (x) s.add(x);
+  return Array.from(s);
+}
+
+function parseDateKey(s: string): { key: string; sort: number } | null {
+  const t = (s || "").trim();
+  if (!t) return null;
+  const m1 = t.match(/^(\\d{4})-(\\d{2})-(\\d{2})/);
+  if (m1) {
+    const y = Number(m1[1]);
+    const mo = Number(m1[2]);
+    const d = Number(m1[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    return { key: m1[1] + "-" + m1[2] + "-" + m1[3], sort: dt.getTime() };
+  }
+  const m2 = t.match(/^(\\d{4})-(\\d{2})$/);
+  if (m2) {
+    const y = Number(m2[1]);
+    const mo = Number(m2[2]);
+    const dt = new Date(Date.UTC(y, mo - 1, 1));
+    return { key: m2[1] + "-" + m2[2], sort: dt.getTime() };
+  }
+  const m3 = t.match(/^(\\d{4})$/);
+  if (m3) {
+    const y = Number(m3[1]);
+    const dt = new Date(Date.UTC(y, 0, 1));
+    return { key: m3[1], sort: dt.getTime() };
+  }
+  return null;
+}
+
+function normalizeTimelineFromMapa(input: unknown): TLItem[] {
+  // aceita: { nodes: [...] } OU array direto OU { itens: [...] }
+  let nodes: unknown[] = [];
+  if (Array.isArray(input)) {
+    nodes = input;
+  } else if (isObj(input)) {
+    const a = (input as Record<string, unknown>)["nodes"];
+    const b = (input as Record<string, unknown>)["items"];
+    const c = (input as Record<string, unknown>)["itens"];
+    if (Array.isArray(a)) nodes = a;
+    else if (Array.isArray(b)) nodes = b;
+    else if (Array.isArray(c)) nodes = c;
+  }
+
+  const out: TLItem[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (!isObj(n)) continue;
+
+    const rawId = asStr(n["id"]) || asStr(n["slug"]) || asStr(n["key"]) || "";
+    const id = safeId(rawId, "n" + (i + 1));
+    const title = asStr(n["title"]) || asStr(n["label"]) || asStr(n["nome"]) || ("Nodo " + (i + 1));
+    const kind = asStr(n["kind"]) || asStr(n["type"]) || asStr(n["tipo"]);
+    const date = asStr(n["date"]) || asStr(n["day"]) || asStr(n["when"]) || asStr(n["ano"]) || asStr(n["mes"]);
+    const note = asStr(n["note"]) || asStr(n["desc"]) || asStr(n["summary"]) || asStr(n["texto"]) || asStr(n["trecho"]);
+    const url = asStr(n["url"]) || asStr(n["link"]);
+
+    const tags: string[] = [];
+    const tagsRaw = n["tags"];
+    if (Array.isArray(tagsRaw)) {
+      for (const t of tagsRaw) if (typeof t === "string") tags.push(t);
+    } else {
+      const tag1 = asStr(n["tag"]);
+      if (tag1) tags.push(tag1);
+    }
+
+    out.push({ id, title, kind, tags, date, note, url });
+  }
+
+  if (out.length === 0) {
+    out.push({
+      id: "n1",
+      title: "Nenhum nodo encontrado em mapa.json ainda",
+      kind: "placeholder",
+      tags: ["mapa"],
+      date: null,
+      note: "Quando voce preencher mapa.json com nodes, a linha do tempo aparece aqui. Campos sugeridos: id, title, kind, tags, date.",
+      url: null
+    });
+  }
+
+  return out;
+}
+
+async function copyText(text: string) {
+  try {
+    if (!text) return;
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  } catch {
+    // ok
+  }
+}
+
+function linkToItem(slug: string, id: string): string {
+  // mantem simples: ancora local. (mapa focus fica para D2)
+  return "/c/" + slug + "/v2/linha#" + id;
+}
+
+export default function TimelineV2(props: { slug: string; title: string; mapa: unknown }) {
+  const items = useMemo(() => normalizeTimelineFromMapa(props.mapa), [props.mapa]);
+  const [q, setQ] = useState<string>("");
+  const [kind, setKind] = useState<string>("");
+  const [tag, setTag] = useState<string>("");
+
+  const kinds = useMemo(() => uniq(items.map((i) => (i.kind || "").trim()).filter(Boolean)).sort((a,b)=>a.localeCompare(b)), [items]);
+  const tags = useMemo(() => {
+    const all: string[] = [];
+    for (const i of items) for (const t of i.tags) all.push(t);
+    return uniq(all.map((t)=>t.trim()).filter(Boolean)).sort((a,b)=>a.localeCompare(b));
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return items.filter((i) => {
+      if (kind && (i.kind || "") !== kind) return false;
+      if (tag && !i.tags.includes(tag)) return false;
+      if (!qq) return true;
+      const hay = (i.title + " " + (i.note || "")).toLowerCase();
+      const hasTag = i.tags.some((t) => t.toLowerCase().includes(qq));
+      return hay.includes(qq) || hasTag;
+    });
+  }, [items, q, kind, tag]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const da = a.date ? parseDateKey(a.date) : null;
+      const db = b.date ? parseDateKey(b.date) : null;
+      const sa = da ? da.sort : Number.POSITIVE_INFINITY;
+      const sb = db ? db.sort : Number.POSITIVE_INFINITY;
+      if (sa !== sb) return sa - sb;
+      return a.title.localeCompare(b.title);
+    });
+    return arr;
+  }, [filtered]);
+
+  const groups = useMemo(() => {
+    const out: Array<{ key: string; label: string; items: TLItem[]; sort: number }> = [];
+    const map = new Map<string, { label: string; sort: number; items: TLItem[] }>();
+    for (const it of sorted) {
+      const pk = it.date ? parseDateKey(it.date) : null;
+      const key = pk ? pk.key : "sem-data";
+      const sort = pk ? pk.sort : Number.POSITIVE_INFINITY;
+      const label = pk ? pk.key : "Sem data";
+      const cur = map.get(key);
+      if (!cur) map.set(key, { label, sort, items: [it] });
+      else cur.items.push(it);
+    }
+    for (const [k, v] of map.entries()) out.push({ key: k, label: v.label, sort: v.sort, items: v.items });
+    out.sort((a, b) => a.sort - b.sort);
+    return out;
+  }, [sorted]);
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "stretch" }}>
+      <aside style={{ flex: "0 1 380px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900, letterSpacing: "-0.01em" }}>Linha do tempo</h2>
+          <div style={{ opacity: 0.65, fontSize: 12 }}>V2 • {props.title}</div>
+        </div>
+
+        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="buscar por titulo, nota ou tag..."
+            style={{
+              width: "100%",
+              border: "1px solid rgba(255,255,255,0.18)",
+              background: "rgba(0,0,0,0.25)",
+              color: "rgba(255,255,255,0.9)",
+              borderRadius: 12, padding: "8px 10px", fontSize: 12
+            }}
+          />
+        </div>
+
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ opacity: 0.65, fontSize: 12 }}>tipo:</span>
+          <button onClick={() => setKind("")} style={{ border: "1px solid rgba(255,255,255,0.14)", background: kind ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.92)", borderRadius: 999, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>todos</button>
+          {kinds.map((k) => (
+            <button key={k} onClick={() => setKind(k)} style={{ border: "1px solid rgba(255,255,255,0.14)", background: kind === k ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", borderRadius: 999, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>{k}</button>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ opacity: 0.65, fontSize: 12 }}>tag:</span>
+          <button onClick={() => setTag("")} style={{ border: "1px solid rgba(255,255,255,0.14)", background: tag ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.92)", borderRadius: 999, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>todas</button>
+          {tags.slice(0, 24).map((t) => (
+            <button key={t} onClick={() => setTag(t)} style={{ border: "1px solid rgba(255,255,255,0.14)", background: tag === t ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", borderRadius: 999, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>{t}</button>
+          ))}
+          {tags.length > 24 ? <span style={{ opacity: 0.55, fontSize: 12 }}>+{tags.length - 24}</span> : null}
+        </div>
+
+        <div style={{ marginTop: 12, opacity: 0.7, fontSize: 12 }}>itens: <b>{sorted.length}</b> / {items.length}</div>
+        <div style={{ marginTop: 8, opacity: 0.6, fontSize: 12 }}>dica: inclua campo date nos nodes do mapa para ordenar</div>
+      </aside>
+
+      <section style={{ flex: "1 1 700px", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 16 }}>
+        <div style={{ opacity: 0.7, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>Momentos</div>
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 14 }}>
+          {groups.map((g) => (
+            <div key={g.key}>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 950, letterSpacing: "-0.01em" }}>{g.label}</h3>
+                <span style={{ opacity: 0.6, fontSize: 12 }}>({g.items.length})</span>
+              </div>
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+                {g.items.map((it) => (
+                  <article key={it.id} id={it.id} style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.14)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                      <div style={{ fontWeight: 950, letterSpacing: "-0.01em" }}>{it.title}</div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={() => copyText(linkToItem(props.slug, it.id))} style={{ border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.92)", borderRadius: 12, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}>copiar link</button>
+                        {it.url ? <a href={it.url} target="_blank" rel="noreferrer" style={{ border: "1px solid rgba(255,255,255,0.18)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", borderRadius: 12, padding: "6px 10px", fontSize: 12, textDecoration: "none" }}>abrir fonte</a> : null}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", opacity: 0.9 }}>
+                      {it.kind ? <span style={{ border: "1px solid rgba(255,255,255,0.14)", borderRadius: 999, padding: "3px 8px", fontSize: 12 }}>{it.kind}</span> : null}
+                      {it.tags.map((t) => <span key={t} style={{ border: "1px solid rgba(255,255,255,0.14)", borderRadius: 999, padding: "3px 8px", fontSize: 12 }}>{t}</span>)}
+                      {!it.kind && it.tags.length === 0 ? <span style={{ opacity: 0.6, fontSize: 12 }}>sem metadados</span> : null}
+                    </div>
+
+                    {it.note ? (
+                      <div style={{ marginTop: 10, opacity: 0.92, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{it.note}</div>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}

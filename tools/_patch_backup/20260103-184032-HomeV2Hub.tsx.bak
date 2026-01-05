@@ -1,0 +1,82 @@
+"use client";
+
+import React, { useMemo, useSyncExternalStore } from "react";
+import Link from "next/link";
+
+function useLocalStorageString(key: string): string {
+  const subscribe = (cb: () => void) => {
+    if (typeof window === "undefined") return () => {};
+    const h: EventListener = () => cb();
+    window.addEventListener("storage", h);
+    window.addEventListener("cv:ls", h);
+    return () => {
+      window.removeEventListener("storage", h);
+      window.removeEventListener("cv:ls", h);
+    };
+  };
+  const getSnap = () => {
+    try {
+      return localStorage.getItem(key) || "";
+    } catch {
+      return "";
+    }
+  };
+  return useSyncExternalStore(subscribe, getSnap, () => "");
+}
+
+function normalizeLastHref(slug: string, v: string): string {
+  const base = "/c/" + slug + "/v2";
+  if (!v) return base;
+  if (typeof v !== "string") return base;
+  if (v.startsWith("/c/" + slug)) return v;
+  return base;
+}
+
+export default function HomeV2Hub(props: { slug: string; title: string }) {
+  const key = "cv:last:" + props.slug;
+  const lastRaw = useLocalStorageString(key);
+  const lastHref = useMemo(() => normalizeLastHref(props.slug, lastRaw), [props.slug, lastRaw]);
+
+  const cards = useMemo(() => {
+    const s = props.slug;
+    return [
+      { href: "/c/" + s + "/v2/mapa", title: "Mapa", desc: "Mapa mental conectado (nós e links)." },
+      { href: "/c/" + s + "/v2/linha-do-tempo", title: "Linha do tempo", desc: "Eventos e memórias em sequência." },
+      { href: "/c/" + s + "/v2/trilhas", title: "Trilhas", desc: "Roteiros guiados de estudo e ação." },
+      { href: "/c/" + s + "/v2/provas", title: "Provas", desc: "Documentos, fontes e evidências." },
+      { href: "/c/" + s + "/v2/debate", title: "Debate", desc: "Camadas de conversa por tema/nó." },
+    ];
+  }, [props.slug]);
+
+  return (
+    <section className="w-full max-w-6xl mx-auto px-4 py-8">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{props.title}</h1>
+          <p className="text-sm opacity-80">Concreto Zen (V2) — navegação por mapas, trilhas, provas e debate.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href={lastHref} className="text-xs px-3 py-2 rounded-md border border-black/15 dark:border-white/15 hover:opacity-90">
+            Continuar
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {cards.map((c) => (
+          <Link key={c.href} href={c.href} className="rounded-xl border border-black/10 dark:border-white/10 bg-white/70 dark:bg-black/25 p-4 hover:opacity-95">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-base font-semibold">{c.title}</h2>
+              <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-current/25 opacity-70">v2</span>
+            </div>
+            <p className="mt-2 text-sm opacity-85">{c.desc}</p>
+          </Link>
+        ))}
+      </div>
+
+      <p className="mt-6 text-xs opacity-70">
+        Dica: pages V2 podem salvar o ultimo lugar no localStorage usando a chave <span className="font-mono">{key}</span>.
+      </p>
+    </section>
+  );
+}

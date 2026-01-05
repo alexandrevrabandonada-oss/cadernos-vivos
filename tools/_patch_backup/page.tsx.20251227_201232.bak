@@ -1,0 +1,22 @@
+import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
+import Markdown from "@/components/Markdown";
+import CadernoShell from "@/components/CadernoShell";
+import ReadingControls from "@/components/ReadingControls";
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await getCaderno(slug);
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+  return (
+    <CadernoShell title={data.meta.title} subtitle={data.meta.subtitle} ethos={data.meta.ethos} style={s}>
+<div className="card p-5">
+        <h2 className="text-xl font-semibold">Trilha</h2>
+        <p className="muted mt-2">Leitura guiada: do panorama ao chão da cidade. Sem excesso de burocracia.</p>
+      </div>
+      <div className="card p-5">
+        {data.trilha ? <Markdown markdown={data.trilha} /> : <p className="muted">Sem trilha ainda. (Crie content/cadernos/[slug]/trilha.md)</p>}
+      </div>
+    </CadernoShell>
+  );
+}

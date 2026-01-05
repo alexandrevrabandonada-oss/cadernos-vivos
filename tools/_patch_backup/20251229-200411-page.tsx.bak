@@ -1,0 +1,27 @@
+import V2Nav from "@/components/v2/V2Nav";
+import ProvasV2 from "@/components/v2/ProvasV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+type AnyObj = Record<string, unknown>;
+function isObj(v: unknown): v is AnyObj {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function getProp(obj: unknown, key: string): unknown {
+  if (!isObj(obj)) return undefined;
+  return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
+}
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const c = await loadCadernoV2(slug);
+  const meta = getProp(c, "meta");
+  const title = (isObj(meta) && typeof meta.title === "string" ? meta.title : slug);
+  const acervo = getProp(c, "acervo") ?? getProp(c, "provas") ?? null;
+
+  return (
+    <main style={{ padding: 12 }}>
+      <V2Nav slug={slug} active="provas" />
+      <ProvasV2 slug={slug} title={title} acervo={acervo} />
+    </main>
+  );
+}

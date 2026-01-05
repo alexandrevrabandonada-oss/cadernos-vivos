@@ -1,0 +1,174 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+
+export type MapPoint = {
+  id: string;
+  title?: string;
+  label?: string;
+  name?: string;
+  kind?: string;
+  category?: string;
+  lat?: number;
+  lng?: number;
+  x?: number;
+  y?: number;
+  desc?: string;
+  description?: string;
+  source?: string;
+  url?: string;
+};
+
+type Saved = { selectedId?: string; notes?: Record<string, string> };
+
+function inferSlugFromPath(pathname: string): string {
+  const parts = pathname.split("/").filter(Boolean);
+  const i = parts.indexOf("c");
+  if (i >= 0 && parts.length > i + 1) return parts[i + 1] || "";
+  return "";
+}
+
+function keyFor(slug: string) {
+  return "cv:" + slug + ":mapa:v1";
+}
+
+function safeLoad(k: string): Saved {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(k);
+    if (!raw) return {};
+    return JSON.parse(raw) as Saved;
+  } catch {
+    return {};
+  }
+}
+
+function safeSave(k: string, data: Saved) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(k, JSON.stringify(data)); } catch {}
+}
+
+function titleOf(p: MapPoint): string {
+  return p.title || p.label || p.name || p.id;
+}
+
+function descOf(p: MapPoint): string {
+  return p.desc || p.description || "";
+}
+
+function normalize(points: MapPoint[]) {
+  const withLatLng = points.filter((p) => typeof p.lat === "number" && typeof p.lng === "number");
+  if (withLatLng.length === 0) return points;
+  const lats = withLatLng.map((p) => p.lat as number);
+  const lngs = withLatLng.map((p) => p.lng as number);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const dLat = maxLat - minLat || 1;
+  const dLng = maxLng - minLng || 1;
+  return points.map((p) => {
+    if (typeof p.x === "number" && typeof p.y === "number") return p;
+    if (typeof p.lat === "number" && typeof p.lng === "number") {
+      const x = ((p.lng - minLng) / dLng) * 100;
+      const y = (1 - (p.lat - minLat) / dLat) * 100;
+      return { ...p, x, y };
+    }
+    return { ...p, x: 50, y: 50 };
+  });
+}
+
+export default function TerritoryMap({
+  slug,
+  points,
+}: {
+  slug?: string;
+  points: MapPoint[];
+}) {
+  const pathname = usePathname();
+  const inferred = useMemo(() => (slug && slug.length ? slug : inferSlugFromPath(pathname)), [slug, pathname]);
+  const storageKey = useMemo(() => (inferred ? keyFor(inferred) : ""), [inferred]);
+
+  const norm = useMemo(() => normalize(points || []), [points]);
+  const init = useMemo(() => (storageKey ? safeLoad(storageKey) : {}), [storageKey]);
+
+  const [selectedId, setSelectedId] = useState<string>(init.selectedId || (norm[0]?.id || ""));
+  const [notes, setNotes] = useState<Record<string, string>>(init.notes || {});
+
+  const selected = useMemo(() => norm.find((p) => p.id === selectedId), [norm, selectedId]);
+
+  const save = (nextSelectedId: string, nextNotes: Record<string, string>) => {
+    if (!storageKey) return;
+    safeSave(storageKey, { selectedId: nextSelectedId, notes: nextNotes });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="card p-5">
+        <h2 className="text-xl font-semibold">Mapa do territorio</h2>
+        <p className="muted mt-2">
+          Clique nos pontos. Use as notas para registrar observacoes e pistas do territorio.
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+        <div className="card p-4">
+          <div className="relative w-full overflow-hidden rounded-xl border border-white/10 bg-black/20" style={{ height: 420 }}>
+            <div className="absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+            {norm.map((p) => {
+              const x = typeof p.x === "number" ? p.x : 50;
+              const y = typeof p.y === "number" ? p.y : 50;
+              const active = p.id === selectedId;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => { setSelectedId(p.id); save(p.id, notes); }}
+                  className={"absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs hover:bg-white/10 " + (active ? "ring-2 ring-white/30" : "")}
+                  style={{ left: x + "%", top: y + "%" }}
+                  title={titleOf(p)}
+                >
+                  {titleOf(p)}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-xs muted">Dica: se mapa.json tiver lat/lng, a posicao e normalizada automaticamente.</div>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="card p-5">
+            <div className="text-xs muted">Ponto selecionado</div>
+            <div className="text-lg font-semibold mt-1">{selected ? titleOf(selected) : "Nenhum"}</div>
+            {selected ? (
+              <div className="mt-2 grid gap-2 text-sm muted">
+                {descOf(selected) ? <div className="whitespace-pre-wrap">{descOf(selected)}</div> : <div>Sem descricao.</div>}
+                {(typeof selected.lat === "number" && typeof selected.lng === "number") ? (
+                  <div>Coord: {String(selected.lat)}, {String(selected.lng)}</div>
+                ) : null}
+                {(selected.url || selected.source) ? (
+                  <div className="break-all">Fonte: {String(selected.url || selected.source)}</div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="card p-5">
+            <div className="text-sm font-semibold">Notas do ponto</div>
+            <textarea
+              className="mt-3 w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+              rows={8}
+              value={notes[selectedId] || ""}
+              onChange={(e) => {
+                const next = { ...notes, [selectedId]: e.target.value };
+                setNotes(next);
+                save(selectedId, next);
+              }}
+              placeholder="O que voce viu? Qual pista? O que falta medir, documentar, cobrar?"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

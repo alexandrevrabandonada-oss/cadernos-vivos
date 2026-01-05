@@ -1,0 +1,214 @@
+import React from "react";
+
+type AnyObj = Record<string, unknown>;
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function asStr(v: unknown, fallback: string): string {
+  return typeof v === "string" && v.trim() ? v : fallback;
+}
+
+function pick(v: unknown, keys: string[]): unknown {
+  if (!isObj(v)) return undefined;
+  for (const k of keys) {
+    const got = (v as AnyObj)[k];
+    if (got !== undefined) return got;
+  }
+  return undefined;
+}
+
+function toSteps(v: unknown): string[] {
+  if (!v) return [];
+  if (Array.isArray(v)) {
+    return v
+      .filter((x) => typeof x === "string")
+      .map((x) => (x as string).trim())
+      .filter(Boolean);
+  }
+  if (isObj(v)) {
+    const s = pick(v, ["steps", "passos", "itens", "items", "lista"]);
+    if (Array.isArray(s)) {
+      return s
+        .filter((x) => typeof x === "string")
+        .map((x) => (x as string).trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+export type Trail = {
+  id: string;
+  title: string;
+  description?: string;
+  steps?: string[];
+  source?: "trilhas" | "mapa";
+};
+
+function normalizeArr(arr: unknown[], source: "trilhas" | "mapa"): Trail[] {
+  const out: Trail[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const it = arr[i];
+    if (!it) continue;
+    if (isObj(it)) {
+      const id = asStr(pick(it, ["id", "slug", "key"]), "t" + String(i + 1));
+      const title = asStr(pick(it, ["title", "titulo", "name", "nome"]), "Trilha " + String(i + 1));
+      const description = pick(it, ["description", "descricao", "desc", "resumo"]);
+      const steps = toSteps(pick(it, ["steps", "passos", "itens", "items", "lista"]));
+      out.push({
+        id,
+        title,
+        description: typeof description === "string" ? description : undefined,
+        steps: steps.length ? steps : undefined,
+        source,
+      });
+      continue;
+    }
+    if (typeof it === "string" && it.trim()) {
+      out.push({ id: "t" + String(i + 1), title: it.trim(), source });
+    }
+  }
+  return out;
+}
+
+function trailsFromTrilhas(raw: unknown): Trail[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return normalizeArr(raw, "trilhas");
+  if (isObj(raw)) {
+    const maybe = pick(raw, ["trilhas", "trails", "items", "lista"]);
+    if (Array.isArray(maybe)) return normalizeArr(maybe, "trilhas");
+  }
+  return [];
+}
+
+function trailsFromMapa(mapa: unknown): Trail[] {
+  if (!mapa) return [];
+  if (Array.isArray(mapa)) {
+    const nodes = mapa;
+    const onlyTrail = nodes.filter((n) => {
+      if (!isObj(n)) return false;
+      const t = pick(n, ["type", "kind", "nodeType"]);
+      return typeof t === "string" && t.toLowerCase() === "trail";
+    });
+    return normalizeArr(onlyTrail, "mapa");
+  }
+  if (isObj(mapa)) {
+    const nodes = pick(mapa, ["nodes", "items", "timeline"]);
+    if (Array.isArray(nodes)) {
+      const onlyTrail = nodes.filter((n) => {
+        if (!isObj(n)) return false;
+        const t = pick(n, ["type", "kind", "nodeType"]);
+        return typeof t === "string" && t.toLowerCase() === "trail";
+      });
+      return normalizeArr(onlyTrail, "mapa");
+    }
+  }
+  return [];
+}
+
+export function TrilhasV2(props: { slug: string; title: string; trilhas?: unknown; mapa?: unknown }) {
+  const fromTrilhas = trailsFromTrilhas(props.trilhas);
+  const trails = fromTrilhas.length ? fromTrilhas : trailsFromMapa(props.mapa);
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <header
+        style={{
+          border: "1px solid rgba(255,255,255,0.10)",
+          borderRadius: 14,
+          padding: 12,
+          background: "rgba(0,0,0,0.22)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Trilhas V2</div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>{props.title}</div>
+          </div>
+          <span
+            style={{
+              fontSize: 12,
+              opacity: 0.85,
+              padding: "6px 10px",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.12)",
+            }}
+          >
+            {trails.length} trilha(s)
+          </span>
+        </div>
+      </header>
+
+      {trails.length === 0 ? (
+        <div
+          style={{
+            borderRadius: 14,
+            padding: 12,
+            border: "1px solid rgba(255,255,255,0.10)",
+            background: "rgba(0,0,0,0.18)",
+            fontSize: 13,
+            lineHeight: 1.45,
+            opacity: 0.95,
+          }}
+        >
+          Ainda não tem trilhas aqui. Você pode criar um <b>trilhas.json</b> no caderno (normalize layer lê como <code>trilhas</code>),
+          ou marcar nós do mapa com <code>{`type: "trail"`}</code> (best-effort).
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          {trails.map((t) => (
+            <section
+              key={t.id}
+              id={t.id}
+              style={{
+                borderRadius: 14,
+                padding: 12,
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: "rgba(0,0,0,0.18)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 240 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 900,
+                        padding: "5px 10px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "rgba(255,255,255,0.06)",
+                      }}
+                    >
+                      #{t.id}
+                    </span>
+                    <div style={{ fontSize: 14, fontWeight: 900 }}>{t.title}</div>
+                  </div>
+                  {t.description ? (
+                    <div style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95, whiteSpace: "pre-wrap" }}>{t.description}</div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>origem: {t.source ?? "?"}</span>
+                </div>
+              </div>
+
+              {t.steps && t.steps.length ? (
+                <ul style={{ marginTop: 10, paddingLeft: 18, display: "grid", gap: 6 }}>
+                  {t.steps.map((s, i) => (
+                    <li key={t.id + "-" + String(i)} style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95 }}>
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

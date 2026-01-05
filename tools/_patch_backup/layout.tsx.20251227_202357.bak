@@ -1,0 +1,13 @@
+import React from "react";
+
+import UniverseShell from "@/components/UniverseShell";
+import ReadingControls from "@/components/ReadingControls";
+
+export default function CadernoLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <UniverseShell>
+      <ReadingControls />
+      {children}
+    </UniverseShell>
+  );
+}

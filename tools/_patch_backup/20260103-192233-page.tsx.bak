@@ -1,0 +1,24 @@
+import { notFound } from "next/navigation";
+import V2Nav from "@/components/v2/V2Nav";
+import { DebateV2 } from "@/components/v2/DebateV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await loadCadernoV2(slug);
+  if (!data) return notFound();
+
+  const anyData = data as unknown as Record<string, unknown>;
+  const title = (typeof anyData.title === "string" && anyData.title) ? (anyData.title as string) : slug;
+  const mapa = anyData.mapa ? anyData.mapa : anyData.data;
+  const debate = (anyData.debate ? anyData.debate : (mapa && typeof mapa === "object" ? (mapa as Record<string, unknown>).debate : undefined));
+  const provas = (anyData.provas ? anyData.provas : (mapa && typeof mapa === "object" ? (mapa as Record<string, unknown>).provas : undefined));
+
+
+  return (
+    <main className="min-h-screen">
+      <V2Nav slug={slug} active="debate" />
+      <DebateV2 slug={slug} title={title} debate={debate} mapa={mapa} provas={provas} />
+    </main>
+  );
+}

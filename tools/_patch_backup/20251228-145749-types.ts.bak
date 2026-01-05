@@ -1,0 +1,28 @@
+// AUTO-GERADO pelo tijolo v0_6 — estável (JSON real: sem undefined).
+
+export type UiDefault = 'v1' | 'v2';
+
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [k: string]: JsonValue };
+
+// Regra: nada opcional aqui (opcional => vira undefined). Campo ausente = null.
+export type MetaV2 = {
+  slug: string;
+  title: string;
+  subtitle: string | null;
+  mood: string;
+  accent: string | null;
+  ethos: string | null;
+  ui: { default: UiDefault };
+  [k: string]: JsonValue;
+};
+
+export type CadernoV2 = {
+  meta: MetaV2;
+  panorama: string;
+  referencias: string;
+  mapa: JsonValue;
+  acervo: JsonValue;
+  debate: JsonValue;
+  registro: JsonValue;
+};

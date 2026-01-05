@@ -1,0 +1,73 @@
+import type { JsonValue } from "@/lib/v2/types";
+
+function asObj(v: unknown): Record<string, JsonValue> | null {
+  if (!v || typeof v !== "object") return null;
+  return v as Record<string, JsonValue>;
+}
+function asArr(v: JsonValue | undefined): JsonValue[] {
+  return Array.isArray(v) ? v : [];
+}
+function asStr(v: JsonValue | undefined): string | null {
+  return typeof v === "string" ? v : null;
+}
+function pickArr(o: Record<string, JsonValue> | null, keys: string[]): JsonValue[] {
+  if (!o) return [];
+  for (const k of keys) {
+    const vv = o[k];
+    if (Array.isArray(vv)) return vv as JsonValue[];
+  }
+  return [];
+}
+
+type Props = { slug: string; title: string; debate: unknown };
+
+export default function DebateV2({ slug, title, debate }: Props) {
+  const o = asObj(debate);
+  const questions = pickArr(o, ["questions", "perguntas", "items", "entries"]);
+
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Debate V2</div>
+          <h2 style={{ fontSize: 18, margin: "4px 0 0 0" }}>{title}</h2>
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>slug: {slug}</div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+        {questions.length === 0 ? (
+          <div style={{ opacity: 0.75, fontSize: 14 }}>
+            Ainda não há perguntas estruturadas neste caderno (debate.json).
+          </div>
+        ) : (
+          questions.map((q, i) => {
+            const qo = asObj(q);
+            const id = asStr(qo ? qo["id"] : undefined) || asStr(qo ? qo["slug"] : undefined) || String(i + 1);
+            const t = asStr(qo ? qo["title"] : undefined) || asStr(qo ? qo["q"] : undefined) || asStr(qo ? qo["pergunta"] : undefined) || "Pergunta";
+            const body = asStr(qo ? qo["text"] : undefined) || asStr(qo ? qo["body"] : undefined) || asStr(qo ? qo["conteudo"] : undefined);
+            const tags = asArr(qo ? (qo["tags"] as JsonValue) : undefined).filter((x) => typeof x === "string") as string[];
+            return (
+              <div key={id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                  <div style={{ fontWeight: 700 }}>{t}</div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>#{id}</div>
+                </div>
+                {body ? <div style={{ marginTop: 6, opacity: 0.85 }}>{body}</div> : null}
+                {tags.length ? (
+                  <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {tags.map((tg) => (
+                      <span key={tg} style={{ fontSize: 12, opacity: 0.8, border: "1px solid rgba(255,255,255,0.10)", padding: "2px 8px", borderRadius: 999 }}>
+                        {tg}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}

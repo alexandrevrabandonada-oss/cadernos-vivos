@@ -1,0 +1,20 @@
+import V2Nav from "@/components/v2/V2Nav";
+import TimelineV2 from "@/components/v2/TimelineV2";
+import { loadCadernoV2 } from "@/lib/v2";
+import type { JsonValue } from "@/lib/v2";
+
+export default async function Page(props: { params: Promise<{ slug: string }> }) {
+  const slug = (await props.params).slug;
+  const c = await loadCadernoV2(slug);
+  const title = (c as unknown as { meta?: { title?: string } }).meta?.title ?? slug;
+  const mapa = c.mapa as unknown as JsonValue;
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto" }}>
+      <V2Nav slug={slug} active="linha-do-tempo" />
+      <div style={{ marginTop: 12 }}>
+        <TimelineV2 slug={slug} title={title} mapa={mapa} />
+      </div>
+    </main>
+  );
+}

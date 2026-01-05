@@ -1,0 +1,60 @@
+import Link from 'next/link';
+import MapaV2 from '@/components/v2/MapaV2';
+
+type Jsonish = unknown;
+function asObj(v: unknown): Record<string, Jsonish> | null {
+  if (!v || typeof v !== 'object') return null;
+  return v as Record<string, Jsonish>;
+}
+function asStr(v: unknown): string | null {
+  return typeof v === 'string' ? v : null;
+}
+
+type Params = { slug: string };
+
+function pickLoader(mod: unknown): ((slug: string) => Promise<unknown>) | null {
+  const m = mod as { [k: string]: unknown };
+  const c1 = m['loadCadernoV2'];
+  if (typeof c1 === 'function') return c1 as (slug: string) => Promise<unknown>;
+  const c2 = m['loadCaderno'];
+  if (typeof c2 === 'function') return c2 as (slug: string) => Promise<unknown>;
+  const c3 = m['load'];
+  if (typeof c3 === 'function') return c3 as (slug: string) => Promise<unknown>;
+  return null;
+}
+
+export default async function Page({ params }: { params: Promise<Params> }) {
+  const { slug } = await params;
+  const mod = await import('@/lib/v2');
+  const load = pickLoader(mod as unknown);
+  const data = load ? await load(slug) : null;
+  const d = asObj(data);
+  const meta = asObj(d ? d['meta'] : null);
+  const title = asStr(meta ? meta['title'] : null) || slug;
+  const mapa = d ? d['mapa'] : null;
+
+  return (
+    <main style={{ padding: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Caderno V2</div>
+          <h1 style={{ fontSize: 22, margin: '4px 0 0 0' }}>Mapa</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', opacity: 0.9 }}>
+          <Link href={/c//v2} style={{ textDecoration: 'underline' }}>V2 Home</Link>
+          <Link href={/c//v2/debate} style={{ textDecoration: 'underline' }}>Debate</Link>
+          <Link href={/c//v2/provas} style={{ textDecoration: 'underline' }}>Provas</Link>
+          <Link href={/c//v2/trilhas} style={{ textDecoration: 'underline' }}>Trilhas</Link>
+        </div>
+      </div>
+
+      <section style={{ marginTop: 14 }}>
+        <MapaV2 slug={slug} title={title} mapa={mapa} />
+      </section>
+
+      <footer style={{ marginTop: 18, opacity: 0.6, fontSize: 12 }}>
+        D2 Mapa V2: canvas + painel + dock (Concreto Zen).
+      </footer>
+    </main>
+  );
+}

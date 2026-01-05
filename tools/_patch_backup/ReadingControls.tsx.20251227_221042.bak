@@ -1,0 +1,151 @@
+"use client";
+
+import React from "react";
+
+const LS = {
+  reading: "cv_reading_mode",
+  font: "cv_font_scale",
+} as const;
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function safeNumber(v: string | null, fallback: number) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getMainText(): string {
+  if (typeof document === "undefined") return "";
+  const main = document.querySelector("main");
+  const t = (main ? (main as HTMLElement).innerText : "") || "";
+  return t.replace(/\s+\n/g, "\n").trim();
+}
+
+export default function ReadingControls() {
+  // IMPORTANT: defaults precisam bater no SSR, então nada de window/localStorage aqui
+  const [readingMode, setReadingMode] = React.useState(false);
+  const [fontScale, setFontScale] = React.useState(1);
+  const [speaking, setSpeaking] = React.useState(false);
+
+  // Carrega preferências depois do hydrate (evita mismatch)
+  React.useEffect(() => {
+    try {
+      const rm = (localStorage.getItem(LS.reading) || "") === "1";
+      const fs = clamp(safeNumber(localStorage.getItem(LS.font), 1), 0.9, 1.35);
+      setReadingMode(rm);
+      setFontScale(fs);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Aplica no DOM + persiste
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.dataset.cvReading = readingMode ? "on" : "off";
+    root.style.setProperty("--cv-font-scale", String(fontScale));
+    try { localStorage.setItem(LS.reading, readingMode ? "1" : "0"); } catch {}
+    try { localStorage.setItem(LS.font, String(fontScale)); } catch {}
+  }, [readingMode, fontScale]);
+
+  // Cleanup TTS
+  React.useEffect(() => {
+    return () => {
+      try {
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+      } catch {}
+    };
+  }, []);
+
+  function toggleReading() {
+    setReadingMode(v => !v);
+  }
+
+  function bumpFont(delta: number) {
+    setFontScale(v => clamp(Number((v + delta).toFixed(2)), 0.9, 1.35));
+  }
+
+  function reset() {
+    setReadingMode(false);
+    setFontScale(1);
+  }
+
+  function toggleSpeak() {
+    try {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      const synth = window.speechSynthesis;
+      if (speaking) {
+        synth.cancel();
+        setSpeaking(false);
+        return;
+      }
+      const text = getMainText();
+      if (!text) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1;
+      u.pitch = 1;
+      u.onend = () => setSpeaking(false);
+      u.onerror = () => setSpeaking(false);
+      setSpeaking(true);
+      synth.cancel();
+      synth.speak(u);
+    } catch {
+      setSpeaking(false);
+    }
+  }
+
+  return (
+    <section className="card p-4 flex flex-wrap gap-2 items-center" aria-label="Controles de leitura">
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        aria-pressed={readingMode}
+        onClick={toggleReading}
+        title="Alternar modo leitura"
+      >
+        {readingMode ? "Modo leitura: ON" : "Modo leitura: OFF"}
+      </button>
+
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        onClick={() => bumpFont(-0.05)}
+        title="Diminuir fonte"
+      >
+        A-
+      </button>
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        onClick={() => bumpFont(0.05)}
+        title="Aumentar fonte"
+      >
+        A+
+      </button>
+
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        aria-pressed={speaking}
+        onClick={toggleSpeak}
+        title="Ouvir o conteúdo"
+      >
+        {speaking ? "Parar" : "Ouvir"}
+      </button>
+
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        onClick={reset}
+        title="Resetar preferências"
+      >
+        Reset
+      </button>
+    </section>
+  );
+}

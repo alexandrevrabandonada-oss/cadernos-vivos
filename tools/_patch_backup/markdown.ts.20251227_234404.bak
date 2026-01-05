@@ -1,0 +1,15 @@
+import { remark } from "remark";
+import remarkGfm from "remark-gfm";
+import remarkRehype from "remark-rehype";
+import rehypeStringify from "rehype-stringify";
+import rehypeSanitize from "rehype-sanitize";
+
+export async function mdToHtml(markdown: string): Promise<string> {
+  const file = await remark()
+    .use(remarkGfm)
+    .use(remarkRehype)
+    .use(rehypeSanitize)
+    .use(rehypeStringify)
+    .process(markdown);
+  return String(file);
+}

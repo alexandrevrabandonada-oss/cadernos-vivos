@@ -1,0 +1,26 @@
+import V2Nav from "@/components/v2/V2Nav";
+import MapaV2 from "@/components/v2/MapaV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+function titleFromMeta(meta: unknown, fallback: string): string {
+  if (typeof meta !== "object" || meta === null) return fallback;
+  const r = meta as { title?: unknown };
+  return typeof r.title === "string" && r.title.trim() ? r.title : fallback;
+}
+
+export default async function Page(props: { params: Promise<{ slug: string }> }) {
+  const slug = (await props.params).slug;
+  const c = await loadCadernoV2(slug);
+
+  const meta = (c as unknown as { meta?: unknown }).meta;
+  const title = titleFromMeta(meta, slug);
+  const bag = c as unknown as { mapa?: unknown; map?: unknown; mindmap?: unknown };
+  const mapa = bag.mapa ?? bag.map ?? bag.mindmap ?? null;
+
+  return (
+    <main style={{ padding: 18 }}>
+      <V2Nav slug={slug} active="mapa" />
+      <MapaV2 slug={slug} title={title} mapa={mapa} />
+    </main>
+  );
+}

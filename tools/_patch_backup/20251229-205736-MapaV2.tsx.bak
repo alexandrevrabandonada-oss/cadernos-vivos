@@ -1,0 +1,209 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import MapaDockV2 from "@/components/v2/MapaDockV2";
+
+type NodeV2 = {
+  id: string;
+  title: string;
+  kind?: string;
+  x?: number;
+  y?: number;
+  text?: string;
+  tags?: string[];
+};
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function asNumber(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: string[] = [];
+  for (const x of v) if (typeof x === "string") out.push(x);
+  return out.length ? out : undefined;
+}
+
+function safeIdFrom(title: string, i: number): string {
+  const base = title.toLowerCase().trim()
+    .replace(/[^a-z0-9\\s_-]+/g, "")
+    .replace(/\\s+/g, "-")
+    .slice(0, 48);
+  return (base ? base : "n") + "-" + String(i + 1);
+}
+
+function normalizeNodes(mapa: unknown): NodeV2[] {
+  // aceita: { nodes: [...] } ou { items: [...] } ou array direto
+  let arr: unknown[] | undefined;
+  if (Array.isArray(mapa)) arr = mapa;
+  else if (isRecord(mapa)) {
+    const a = mapa["nodes"];
+    const b = mapa["items"];
+    const c = mapa["mapa"];
+    if (Array.isArray(a)) arr = a;
+    else if (Array.isArray(b)) arr = b;
+    else if (Array.isArray(c)) arr = c;
+  }
+  if (!arr) return [];
+
+  const out: NodeV2[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const it = arr[i];
+    if (typeof it === "string") {
+      const title = it;
+      out.push({ id: safeIdFrom(title, i), title });
+      continue;
+    }
+    if (!isRecord(it)) continue;
+    const title = asString(it["title"]) ?? asString(it["titulo"]) ?? asString(it["name"]) ?? ("Nó " + String(i + 1));
+    const id = asString(it["id"]) ?? asString(it["slug"]) ?? safeIdFrom(title, i);
+    const kind = asString(it["kind"]) ?? asString(it["type"]) ?? asString(it["tipo"]);
+    const x = asNumber(it["x"]);
+    const y = asNumber(it["y"]);
+    const text = asString(it["text"]) ?? asString(it["texto"]) ?? asString(it["desc"]) ?? asString(it["descricao"]);
+    const tags = asStringArray(it["tags"]) ?? asStringArray(it["tag"]);
+    out.push({ id, title, kind, x, y, text, tags });
+  }
+  return out;
+}
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  return h.startsWith("#") ? h.slice(1) : h;
+}
+
+function dispatchSelect(id: string) {
+  // canal opcional para dock/painel reagirem sem acoplamento
+  if (typeof window === "undefined") return;
+  try {
+    const ev = new CustomEvent("cv:v2:map:select", { detail: { id } });
+    window.dispatchEvent(ev);
+  } catch {
+    /* noop */
+  }
+}
+
+export default function MapaV2(props: { slug: string; title: string; mapa: unknown }) {
+  const { slug, title, mapa } = props;
+  const nodes = useMemo(() => normalizeNodes(mapa), [mapa]);
+
+  const [q, setQ] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>(() => (typeof window !== "undefined" ? readHashId() : ""));
+
+  useEffect(() => {
+    const onHash = () => setSelectedId(readHashId());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return nodes;
+    return nodes.filter((n) => {
+      const hay = (n.title + " " + (n.kind ?? "") + " " + (n.text ?? "") + " " + (n.tags?.join(" ") ?? "")).toLowerCase();
+      return hay.includes(qq);
+    });
+  }, [nodes, q]);
+
+  const selected = useMemo(() => nodes.find((n) => n.id === selectedId), [nodes, selectedId]);
+
+  return (
+    <section style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, letterSpacing: 0.2 }}>Mapa</h1>
+          <div style={{ opacity: 0.75, marginTop: 2 }}>{title} • {nodes.length} nó(s)</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar nós (título, tipo, tags, texto)..."
+            style={{ flex: "1 1 260px", padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.25)", color: "white" }}
+          />
+          <div style={{ opacity: 0.75 }}>{filtered.length} resultado(s)</div>
+        </div>
+      </header>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12, alignItems: "start" }}>
+        <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, background: "rgba(0,0,0,0.22)", overflow: "hidden" }}>
+          <div style={{ padding: 12, borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontWeight: 700 }}>Canvas</div>
+            <div style={{ opacity: 0.7, fontSize: 13 }}>Clique em um nó para abrir no painel</div>
+          </div>
+          <div style={{ padding: 12, display: "grid", gap: 8 }}>
+            {filtered.map((n) => {
+              const isSel = n.id === selectedId;
+              return (
+                <a
+                  key={n.id}
+                  href={"#" + n.id}
+                  onClick={() => { setSelectedId(n.id); dispatchSelect(n.id); }}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    textDecoration: "none",
+                    color: "white",
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: isSel ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.18)",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.title}</div>
+                    <div style={{ opacity: 0.75, fontSize: 13, marginTop: 2 }}>{n.kind ?? "nó"}</div>
+                  </div>
+                  <div style={{ opacity: 0.65, fontSize: 12 }}>#{n.id}</div>
+                </a>
+              );
+            })}
+            {!filtered.length ? (
+              <div style={{ opacity: 0.75, padding: 12, border: "1px dashed rgba(255,255,255,0.18)", borderRadius: 12 }}>
+                Nada encontrado. Ajuste a busca ou alimente mapa.json.
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          <MapaDockV2 slug={slug} />
+          <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, background: "rgba(0,0,0,0.22)", padding: 12 }}>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>Painel</div>
+            {selected ? (
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900 }}>{selected.title}</div>
+                <div style={{ opacity: 0.75, marginTop: 4 }}>{selected.kind ?? "nó"} • #{selected.id}</div>
+                {selected.tags?.length ? (
+                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {selected.tags.map((t) => (
+                      <span key={t} style={{ fontSize: 12, opacity: 0.85, padding: "3px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {selected.text ? (
+                  <p style={{ marginTop: 10, marginBottom: 0, opacity: 0.9, lineHeight: 1.35 }}>{selected.text}</p>
+                ) : null}
+              </div>
+            ) : (
+              <div style={{ opacity: 0.75 }}>Selecione um nó no canvas ou use um link com hash (#id).</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

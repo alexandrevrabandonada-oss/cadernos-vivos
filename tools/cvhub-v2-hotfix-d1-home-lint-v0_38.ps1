@@ -1,0 +1,234 @@
+$ErrorActionPreference = "Stop"
+
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Write-Host ("[DIAG] Repo: " + $repo)
+
+$bootstrap = Join-Path $PSScriptRoot "_bootstrap.ps1"
+if (Test-Path -LiteralPath $bootstrap) { . $bootstrap; Write-Host ("[DIAG] Bootstrap: " + $bootstrap) }
+
+if (-not (Get-Command EnsureDir -ErrorAction SilentlyContinue)) {
+  function EnsureDir([string]$p) { New-Item -ItemType Directory -Force -Path $p | Out-Null }
+}
+if (-not (Get-Command WriteUtf8NoBom -ErrorAction SilentlyContinue)) {
+  function WriteUtf8NoBom([string]$p, [string]$t) {
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($p, $t, $enc)
+  }
+}
+if (-not (Get-Command BackupFile -ErrorAction SilentlyContinue)) {
+  function BackupFile([string]$p) {
+    if (-not (Test-Path -LiteralPath $p)) { return $null }
+    $bkDir = Join-Path $repo "tools\_patch_backup"
+    EnsureDir $bkDir
+    $ts = Get-Date -Format "yyyyMMdd-HHmmss"
+    $leaf = Split-Path -Leaf $p
+    $bk = Join-Path $bkDir ($ts + "-" + $leaf + ".bak")
+    Copy-Item -LiteralPath $p -Destination $bk -Force
+    return $bk
+  }
+}
+if (-not (Get-Command RunPs1 -ErrorAction SilentlyContinue)) {
+  function RunPs1([string]$p) {
+    & $PSHOME\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File $p
+    if ($LASTEXITCODE -ne 0) { throw ("[STOP] RunPs1 falhou (exit " + $LASTEXITCODE + "): " + $p) }
+  }
+}
+
+$pagePath = Join-Path $repo "src\app\c\[slug]\v2\page.tsx"
+EnsureDir (Split-Path -Parent $pagePath)
+$bk = BackupFile $pagePath
+
+$lines = @(
+  'import Link from "next/link";',
+  'import V2Nav from "@/components/v2/V2Nav";',
+  'import { loadCadernoV2 } from "@/lib/v2";',
+  '',
+  'type PageProps = { params: Promise<{ slug: string }> };',
+  '',
+  'function titleFromMeta(meta: unknown, fallback: string): string {',
+  '  if (typeof meta !== "object" || meta === null) return fallback;',
+  '  const r = meta as { title?: unknown };',
+  '  const t = r.title;',
+  '  return typeof t === "string" && t.trim() ? t.trim() : fallback;',
+  '}',
+  '',
+  'function excerptFromMarkdown(md: unknown, maxLen: number): string {',
+  '  if (typeof md !== "string") return "";',
+  '  const lines = md.split(/\r?\n/).map((s) => s.trim()).filter(Boolean;',
+  '  if (!lines.length) return "";',
+  '  let pick = "";',
+  '  for (const ln of lines) {',
+  '    if (ln.startsWith("#")) continue;',
+  '    pick = ln;',
+  '    break;',
+  '  }',
+  '  if (!pick) pick = lines[0] ?? "";',
+  '  if (pick.length > maxLen) return pick.slice(0, maxLen - 1) + "…";',
+  '  return pick;',
+  '}',
+  '',
+  'type HotNode = { id: string; title: string; kind?: string };',
+  '',
+  'function isRecord(v: unknown): v is Record<string, unknown> {',
+  '  return typeof v === "object" && v !== null;',
+  '}',
+  '',
+  'function pickString(obj: Record<string, unknown>, keys: string[]): string | undefined {',
+  '  for (const k of keys) {',
+  '    const v = obj[k];',
+  '    if (typeof v === "string" && v.trim()) return v.trim();',
+  '  }',
+  '  return undefined;',
+  '}',
+  '',
+  'function hotNodesFromMapa(mapa: unknown, limit: number): HotNode[] {',
+  '  let arr: unknown[] | undefined;',
+  '  if (Array.isArray(mapa)) {',
+  '    arr = mapa;',
+  '  } else if (isRecord(mapa)) {',
+  '    const n = mapa["nodes"];',
+  '    const it = mapa["items"];',
+  '    if (Array.isArray(n)) arr = n;',
+  '    else if (Array.isArray(it)) arr = it;',
+  '  }',
+  '  if (!arr) return [];',
+  '',
+  '  const out: HotNode[] = [];',
+  '  for (let i = 0; i < arr.length; i++) {',
+  '    const v = arr[i];',
+  '    if (!isRecord(v)) continue;',
+  '    const title = pickString(v, ["title","titulo","name","nome","label"]) ?? ("No " + String(i + 1));',
+  '    const id = pickString(v, ["id","slug","key"]) ?? ("no-" + String(i + 1));',
+  '    const kind = pickString(v, ["kind","type","tipo","categoria"]);',
+  '    out.push({ id, title, kind });',
+  '    if (out.length >= limit) break;',
+  '  }',
+  '  return out;',
+  '}',
+  '',
+  'function DoorCard(p: { href: string; title: string; desc: string }) {',
+  '  return (',
+  '    <Link',
+  '      href={p.href}',
+  '      style={{',
+  '        display: "block",',
+  '        border: "1px solid rgba(255,255,255,0.12)",',
+  '        borderRadius: 16,',
+  '        padding: 14,',
+  '        background: "rgba(0,0,0,0.22)",',
+  '        textDecoration: "none",',
+  '        color: "white",',
+  '      }}',
+  '    >',
+  '      <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{p.title}</div>',
+  '      <div style={{ opacity: 0.78, marginTop: 6, lineHeight: 1.35 }}>{p.desc}</div>',
+  '    </Link>',
+  '  );',
+  '}',
+  '',
+  'export default async function Page(props: PageProps) {',
+  '  const slug = (await props.params).slug;',
+  '  const c = await loadCadernoV2(slug);',
+  '',
+  '  const meta = (c as unknown as { meta?: unknown }).meta;',
+  '  const title = titleFromMeta(meta, slug);',
+  '  const pano = (c as unknown as { panoramaMd?: unknown; panorama?: unknown }).panoramaMd ?? (c as unknown as { panorama?: unknown }).panorama;',
+  '  const sub = excerptFromMarkdown(pano, 220);',
+  '  const mapa = (c as unknown as { mapa?: unknown }).mapa;',
+  '  const hot = hotNodesFromMapa(mapa, 6);',
+  '',
+  '  return (',
+  '    <main style={{ padding: 18 }}>',
+  '      <V2Nav slug={slug} active="home" />',
+  '',
+  '      <section style={{ marginTop: 12, border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, background: "rgba(0,0,0,0.18)", padding: 16 }}>',
+  '        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>',
+  '          <div>',
+  '            <div style={{ fontSize: 12, opacity: 0.75, letterSpacing: 0.6, textTransform: "uppercase" }}>Caderno V2</div>',
+  '            <h1 style={{ margin: "6px 0 0 0", fontSize: 26, letterSpacing: 0.2 }}>{title}</h1>',
+  '            {sub ? <div style={{ marginTop: 8, opacity: 0.82, maxWidth: 820, lineHeight: 1.35 }}>{sub}</div> : null}',
+  '          </div>',
+  '          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>',
+  '            <Link href={"/c/" + slug} style={{ textDecoration: "underline", opacity: 0.9 }}>Abrir V1</Link>',
+  '            <Link href={"/c/" + slug + "/v2/mapa"} style={{ textDecoration: "underline", opacity: 0.9 }}>Abrir Mapa</Link>',
+  '          </div>',
+  '        </div>',
+  '      </section>',
+  '',
+  '      <section style={{ marginTop: 14 }}>',
+  '        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>',
+  '          <DoorCard href={"/c/" + slug + "/v2/mapa"} title="Mapa" desc="Explorar o universo como rede viva: nos, conexoes, camadas e foco por hash." />',
+  '          <DoorCard href={"/c/" + slug + "/v2/debate"} title="Debate" desc="Discussoes e fios de analise com foco por hash, navegacao e continuidade." />',
+  '          <DoorCard href={"/c/" + slug + "/v2/provas"} title="Provas" desc="Acervo de evidencias: busca local, links, tags e copiar link por item." />',
+  '          <DoorCard href={"/c/" + slug + "/v2/linha"} title="Linha do tempo" desc="Linha derivada do mapa: navegar por eventos com foco e contexto." />',
+  '          <DoorCard href={"/c/" + slug + "/v2/trilhas"} title="Trilhas" desc="Percursos guiados (quando existir): do basico ao avancado, com aprofundamento." />',
+  '        </div>',
+  '      </section>',
+  '',
+  '      <section style={{ marginTop: 16, border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, background: "rgba(0,0,0,0.16)", padding: 16 }}>',
+  '        <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>Fios quentes</div>',
+  '        <div style={{ opacity: 0.76, marginTop: 6 }}>Entradas rapidas puxadas do mapa (quando houver nodes).</div>',
+  '',
+  '        {hot.length ? (',
+  '          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>',
+  '            {hot.map((n) => (',
+  '              <Link',
+  '                key={n.id}',
+  '                href={"/c/" + slug + "/v2/mapa#" + n.id}',
+  '                style={{',
+  '                  display: "block",',
+  '                  border: "1px solid rgba(255,255,255,0.10)",',
+  '                  borderRadius: 14,',
+  '                  padding: 12,',
+  '                  background: "rgba(0,0,0,0.22)",',
+  '                  textDecoration: "none",',
+  '                  color: "white",',
+  '                }}',
+  '              >',
+  '                <div style={{ fontWeight: 800 }}>{n.title}</div>',
+  '                <div style={{ opacity: 0.75, marginTop: 4, fontSize: 13 }}>{n.kind ? n.kind : "node"}</div>',
+  '              </Link>',
+  '            ))}',
+  '          </div>',
+  '        ) : (',
+  '          <div style={{ marginTop: 12, opacity: 0.75, border: "1px dashed rgba(255,255,255,0.16)", borderRadius: 14, padding: 12 }}>',
+  '            Ainda nao ha nodes detectaveis no mapa deste caderno. Assim que voce alimentar o mapa.json, essa area acende sozinha.',
+  '          </div>',
+  '        )}',
+  '      </section>',
+  '    </main>',
+  '  );',
+  '}'
+)
+
+WriteUtf8NoBom $pagePath ($lines -join "`n")
+Write-Host ("[OK] patched: " + $pagePath)
+if ($bk) { Write-Host ("[BK] " + $bk) }
+
+$verify = Join-Path $repo "tools\cv-verify.ps1"
+if (Test-Path -LiteralPath $verify) {
+  Write-Host ("[RUN] " + $verify)
+  RunPs1 $verify
+} else {
+  Write-Host ("[WARN] verify não encontrado: " + $verify)
+}
+
+$reportsDir = Join-Path $repo "reports"
+EnsureDir $reportsDir
+$reportPath = Join-Path $reportsDir "cv-v2-hotfix-d1-home-lint-v0_38.md"
+$report = @()
+$report += "# CV — Hotfix v0_38 — Home V2 lint"
+$report += ""
+$report += "## Fix"
+$report += "- Removeu any do Page props (params como Promise)."
+$report += "- Moveu DoorCard para fora do Page para evitar static-components."
+$report += ""
+$report += "## Arquivo"
+$report += "- src/app/c/[slug]/v2/page.tsx"
+$report += ""
+$report += "## Verify"
+$report += "- tools/cv-verify.ps1 (guard + lint + build)"
+$report += ""
+WriteUtf8NoBom $reportPath ($report -join "`n")
+Write-Host ("[OK] Report: " + $reportPath)
+Write-Host "[OK] Hotfix v0_38 aplicado."

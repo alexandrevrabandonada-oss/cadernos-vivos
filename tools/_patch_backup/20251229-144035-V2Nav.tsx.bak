@@ -1,0 +1,50 @@
+import Link from "next/link";
+
+type Active = "home" | "mapa" | "debate" | "provas" | "linha" | "trilhas";
+
+export default function V2Nav(props: { slug: string; active?: Active }) {
+  const slug = props.slug;
+  const a = props.active || "home";
+
+  const base = "/c/" + slug + "/v2";
+  const items: Array<{ key: Active; label: string; href: string }> = [
+    { key: "home",   label: "V2 Home",        href: base },
+    { key: "mapa",   label: "Mapa",           href: base + "/mapa" },
+    { key: "linha",  label: "Linha do tempo", href: base + "/linha-do-tempo" },
+    { key: "debate", label: "Debate",         href: base + "/debate" },
+    { key: "provas", label: "Provas",         href: base + "/provas" },
+    { key: "trilhas",label: "Trilhas",        href: base + "/trilhas" }
+  ];
+
+  return (
+    <nav style={{
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      padding: "10px 0",
+      borderBottom: "1px solid rgba(255,255,255,0.08)",
+      marginBottom: 12,
+      opacity: 0.92
+    }}>
+      {items.map((it) => {
+        const on = it.key === a;
+        return (
+          <Link
+            key={it.key}
+            href={it.href}
+            style={{
+              textDecoration: "none",
+              padding: "6px 10px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: on ? "rgba(255,255,255,0.08)" : "transparent",
+              color: "inherit"
+            }}
+          >
+            {it.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}

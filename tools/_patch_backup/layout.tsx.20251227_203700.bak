@@ -1,0 +1,36 @@
+import React from "react";
+
+import UniverseShell from "@/components/UniverseShell";
+import ReadingControls from "@/components/ReadingControls";
+import { getCaderno } from "@/lib/cadernos";
+
+function pickMoodFromMeta(meta: any): string {
+  if (!meta) return "";
+  const v = meta.mood || meta.universe || meta.theme || meta.tone || "";
+  return v ? String(v) : "";
+}
+
+export default async function CadernoLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: { slug: string };
+}) {
+  const slug = params.slug;
+
+  let mood = "";
+  try {
+    const data: any = await getCaderno(slug);
+    mood = pickMoodFromMeta(data && data.meta ? data.meta : null);
+  } catch {
+    mood = "";
+  }
+
+  return (
+    <UniverseShell slug={slug} mood={mood}>
+      <ReadingControls />
+      {children}
+    </UniverseShell>
+  );
+}

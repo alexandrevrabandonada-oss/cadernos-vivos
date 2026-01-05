@@ -1,0 +1,80 @@
+import type { JsonValue } from "@/lib/v2/types";
+
+function asObj(v: unknown): Record<string, JsonValue> | null {
+  if (!v || typeof v !== "object") return null;
+  if (Array.isArray(v)) return null;
+  return v as Record<string, JsonValue>;
+}
+
+function asArr(v: unknown): JsonValue[] {
+  return Array.isArray(v) ? (v as JsonValue[]) : [];
+}
+
+function toText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return "";
+}
+
+export default function ProvasV2({ acervo }: { acervo: JsonValue }) {
+  const root = asObj(acervo) || {};
+  const items = asArr(root["items"] ?? root["provas"] ?? root["links"] ?? root["fontes"]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="text-sm opacity-70">Provas</div>
+        <div className="text-xl font-semibold">Acervo e referencias</div>
+        <div className="mt-1 text-sm opacity-70">V2 placeholder estável.</div>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm opacity-70">
+          Sem itens no acervo ainda.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {items.map((it, i) => {
+            const io = asObj(it) || {};
+            const url = toText(io["url"] ?? io["link"]);
+            const title = toText(io["title"] ?? io["name"] ?? io["titulo"]) || (url ? url : ("Item " + (i + 1)));
+            const kind = toText(io["kind"] ?? io["type"] ?? io["tipo"]);
+            const tagsArr = asArr(io["tags"]);
+            const tags = tagsArr.map((t) => toText(t)).filter((t) => t.length > 0).slice(0, 6);
+
+            return (
+              <div key={i} className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-base font-semibold">{title}</div>
+                    {kind ? <div className="mt-1 text-xs opacity-70">{kind}</div> : null}
+                  </div>
+                  {url ? (
+                    <a
+                      className="shrink-0 rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-xs hover:bg-black/40"
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir
+                    </a>
+                  ) : null}
+                </div>
+                {tags.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {tags.map((t, j) => (
+                      <span key={j} className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs opacity-90">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

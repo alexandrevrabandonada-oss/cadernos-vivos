@@ -1,0 +1,314 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+
+export type ProvaItem = {
+  id: string;
+  title?: string;
+  kind?: string;
+  url?: string;
+  source?: string;
+  note?: string;
+  tags?: string[];
+  date?: string;
+  [k: string]: any;
+};
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  return h.startsWith("#") ? h.slice(1) : h;
+}
+
+function setHashId(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    url.hash = id ? "#" + id : "";
+    window.history.replaceState(null, "", url.toString());
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  } catch {
+  }
+}
+
+function useHashId(): string {
+  return useSyncExternalStore(
+    (cb) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => readHashId(),
+    () => ""
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function normId(v: any, idx: number): string {
+  const s = (typeof v === "string" ? v : "").trim();
+  if (s) return s;
+  return "p" + String(idx + 1);
+}
+
+function textOf(item: ProvaItem): string {
+  const t = (item.title || item.name || item.titulo || "").toString();
+  const n = (item.note || item.obs || item.descricao || "").toString();
+  const u = (item.url || item.link || "").toString();
+  const k = (item.kind || item.type || item.tipo || "").toString();
+  return (t + " " + n + " " + u + " " + k).toLowerCase();
+}
+
+function getTitle(item: ProvaItem): string {
+  return (item.title || item.name || item.titulo || item.id).toString();
+}
+
+function getUrl(item: ProvaItem): string {
+  return (item.url || item.link || "").toString();
+}
+
+function getKind(item: ProvaItem): string {
+  return (item.kind || item.type || item.tipo || "").toString();
+}
+
+function getTags(item: ProvaItem): string[] {
+  const t = item.tags || item.tag || item.temas || item.labels;
+  if (Array.isArray(t)) return t.map((x) => String(x)).filter(Boolean);
+  if (typeof t === "string" && t.trim()) return t.split(",").map((x) => x.trim()).filter(Boolean);
+  return [];
+}
+
+function makeRef(item: ProvaItem): string {
+  const title = getTitle(item);
+  const src = (item.source || item.fonte || "").toString();
+  const url = getUrl(item);
+  const kind = getKind(item);
+  const bits = [title, kind, src, url].map((x) => (x || "").trim()).filter(Boolean);
+  return bits.join(" — ");
+}
+
+export function ProvasV2(props: { slug: string; title: string; items: ProvaItem[] }) {
+  const activeId = useHashId();
+  const [q, setQ] = useState("");
+  const [tag, setTag] = useState<string>("");
+
+  const items = useMemo(() => {
+    const raw = Array.isArray(props.items) ? props.items : [];
+    return raw.map((it: any, idx) => ({ ...it, id: normId(it && it.id, idx) })) as ProvaItem[];
+  }, [props.items]);
+
+  const tags = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) for (const t of getTags(it)) set.add(t);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const qq = (q || "").trim().toLowerCase();
+    return items.filter((it) => {
+      if (tag) {
+        const ts = getTags(it);
+        if (!ts.includes(tag)) return false;
+      }
+      if (!qq) return true;
+      return textOf(it).includes(qq);
+    });
+  }, [items, q, tag]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const el = document.getElementById(activeId);
+    if (!el) return;
+    const t = setTimeout(() => {
+      try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
+    }, 20);
+    return () => clearTimeout(t);
+  }, [activeId]);
+
+  const onFocus = useCallback((id: string) => setHashId(id), []);
+  const onClear = useCallback(() => setHashId(""), []);
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <header style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.22)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Provas / Acervo V2</div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>{props.title}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, opacity: 0.85, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+              Foco: {activeId ? "#" + activeId : "nenhum"}
+            </span>
+            <button onClick={onClear} type="button" title="Limpar foco (remover hash)" style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}>
+              Limpar foco
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar em títulos, notas, links..."
+            style={{
+              flex: "1 1 280px",
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(0,0,0,0.25)",
+              color: "inherit",
+              outline: "none",
+            }}
+          />
+          <div style={{ fontSize: 12, opacity: 0.8, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+            {filtered.length} / {items.length}
+          </div>
+        </div>
+      </header>
+
+      {tags.length ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => setTag("")}
+            style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "6px 10px", borderRadius: 999, background: !tag ? "var(--accent)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: !tag ? "#111" : "inherit" }}
+            title="Remover filtro de tag"
+          >
+            Todas
+          </button>
+          {tags.map((t) => {
+            const on = tag === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTag(on ? "" : t)}
+                style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "6px 10px", borderRadius: 999, background: on ? "var(--accent)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: on ? "#111" : "inherit" }}
+                title="Filtrar por tag"
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {filtered.map((it) => {
+          const isActive = activeId && activeId === it.id;
+          const title = getTitle(it);
+          const url = getUrl(it);
+          const kind = getKind(it);
+          const ts = getTags(it);
+          const note = (it.note || it.obs || it.descricao || "").toString();
+          const ref = makeRef(it);
+          return (
+            <section
+              key={it.id}
+              id={it.id}
+              style={{ borderRadius: 14, padding: 12, border: isActive ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.18)" }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 260, flex: "1 1 420px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => onFocus(it.id)}
+                      title="Definir foco via hash"
+                      style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "6px 10px", borderRadius: 999, background: isActive ? "var(--accent)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: isActive ? "#111" : "inherit" }}
+                    >
+                      #{it.id}
+                    </button>
+                    <div style={{ fontSize: 14, fontWeight: 900 }}>{title}</div>
+                    {kind ? <span style={{ fontSize: 12, opacity: 0.7, padding: "4px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)" }}>{kind}</span> : null}
+                  </div>
+                  {note ? <div style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95, whiteSpace: "pre-wrap" }}>{note}</div> : null}
+                  {url ? (
+                    <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, opacity: 0.85, textDecoration: "underline", wordBreak: "break-word" }}>
+                      {url}
+                    </a>
+                  ) : null}
+                  {ts.length ? (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                      {ts.map((t) => (
+                        <span key={t} style={{ fontSize: 11, opacity: 0.85, padding: "4px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)" }}>{t}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    title="Copiar referência"
+                    style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                    onClick={async () => { const ok = await copyText(ref); if (!ok) alert("Não consegui copiar aqui. Tenta manualmente."); }}
+                  >
+                    Copiar ref
+                  </button>
+                  <button
+                    type="button"
+                    title="Copiar link direto (com hash)"
+                    style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                    onClick={async () => {
+                      try {
+                        const base = window.location.href.split("#")[0];
+                        const link = base + "#" + it.id;
+                        const ok = await copyText(link);
+                        if (!ok) alert("Não consegui copiar aqui. Tenta manualmente.");
+                      } catch {
+                        alert("Não consegui gerar o link aqui.");
+                      }
+                    }}
+                  >
+                    Copiar link
+                  </button>
+                  <button
+                    type="button"
+                    title="Focar (hash)"
+                    style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                    onClick={() => onFocus(it.id)}
+                  >
+                    Focar
+                  </button>
+                  {url ? (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "var(--accent)", color: "#111", textDecoration: "none" }}
+                      title="Abrir fonte"
+                    >
+                      Abrir
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

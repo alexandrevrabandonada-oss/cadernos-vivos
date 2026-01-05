@@ -1,0 +1,47 @@
+import type { CSSProperties } from "react";
+import fs from "fs/promises";
+import path from "path";
+
+import CadernoHeader from "@/components/CadernoHeader";
+import TerritoryMap from "@/components/TerritoryMap";
+import type { MapPoint } from "@/components/TerritoryMap";
+import { getCaderno } from "@/lib/cadernos";
+
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+type Params = Promise<{ slug: string }> | { slug: string };
+
+async function loadPoints(slug: string): Promise<MapPoint[]> {
+  try {
+    const p = path.join(process.cwd(), "content", "cadernos", slug, "mapa.json");
+    const raw = await fs.readFile(p, "utf8");
+    const data = JSON.parse(raw) as { points?: MapPoint[] };
+    return Array.isArray(data.points) ? data.points : [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function Page({ params }: { params: Params }) {
+  const { slug } = await params;
+  const data = await getCaderno(slug);
+  const points = await loadPoints(slug);
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+
+  return (
+    <main className="space-y-5" style={s}>
+      <CadernoHeader title={data.meta.title} subtitle={data.meta.subtitle} />
+
+      <section className="card p-5">
+        <h2 className="text-xl font-semibold">Mapa do território</h2>
+        <p className="muted mt-2">
+          Uma cartografia prática: pontos, cadeias e conexões. Sem moralismo — com saída.
+        </p>
+        <p className="muted text-sm mt-3">
+          Dica: comece com poucos pontos, mas bem nomeados. Depois a gente evolui para camadas e reincidência.
+        </p>
+      </section>
+
+      <TerritoryMap slug={slug} points={points} />
+    </main>
+  );
+}

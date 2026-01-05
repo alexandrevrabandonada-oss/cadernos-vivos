@@ -1,0 +1,51 @@
+import Link from "next/link";
+import V2Nav from "@/components/v2/V2Nav";
+import { loadCadernoV2 } from "@/lib/v2";
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const caderno = await loadCadernoV2(slug);
+  const title = caderno?.meta?.title || slug;
+  const subtitle = caderno?.meta?.subtitle || null;
+
+  return (
+    <main style={{ padding: 18 }}>
+      <header>
+        <h1 style={{ margin: 0, fontSize: 22, letterSpacing: 0.2 }}>{title}</h1>
+        {subtitle ? (
+          <p style={{ margin: "6px 0 0 0", opacity: 0.75 }}>{subtitle}</p>
+        ) : null}
+      </header>
+
+      <V2Nav slug={slug} active="home" />
+
+      <section style={{ display: "grid", gap: 12, marginTop: 10 }}>
+        <Link href={"/c/" + slug + "/v2/mapa"} style={{ textDecoration: "none", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 16, padding: 14 }}>
+          <div style={{ fontSize: 14, opacity: 0.7 }}>Porta 1</div>
+          <div style={{ fontSize: 18, marginTop: 2 }}>Mapa</div>
+          <div style={{ marginTop: 6, opacity: 0.7, lineHeight: 1.35 }}>Navegação por nós e conexões — o caderno como rede viva.</div>
+        </Link>
+
+        <Link href={"/c/" + slug + "/v2/linha-do-tempo"} style={{ textDecoration: "none", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 16, padding: 14 }}>
+          <div style={{ fontSize: 14, opacity: 0.7 }}>Porta 2</div>
+          <div style={{ fontSize: 18, marginTop: 2 }}>Linha do tempo</div>
+          <div style={{ marginTop: 6, opacity: 0.7, lineHeight: 1.35 }}>Eventos derivados do mapa — continuidade, memória, causa e efeito.</div>
+        </Link>
+
+        <Link href={"/c/" + slug + "/v2/debate"} style={{ textDecoration: "none", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 16, padding: 14 }}>
+          <div style={{ fontSize: 14, opacity: 0.7 }}>Porta 3</div>
+          <div style={{ fontSize: 18, marginTop: 2 }}>Debate</div>
+          <div style={{ marginTop: 6, opacity: 0.7, lineHeight: 1.35 }}>Perguntas e disputas do caderno — com trilhas para ação.</div>
+        </Link>
+      </section>
+
+      <footer style={{ marginTop: 16, opacity: 0.6, fontSize: 12 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug} style={{ textDecoration: "underline", color: "inherit" }}>Ver V1</Link>
+          <Link href={"/c/" + slug + "/v2/provas"} style={{ textDecoration: "underline", color: "inherit" }}>Provas</Link>
+          <Link href={"/c/" + slug + "/v2/trilhas"} style={{ textDecoration: "underline", color: "inherit" }}>Trilhas</Link>
+        </div>
+      </footer>
+    </main>
+  );
+}

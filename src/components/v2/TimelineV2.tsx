@@ -1,0 +1,263 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => !!v && typeof v === "object";
+const asStr = (v: unknown): string => (typeof v === "string" ? v : "");
+const asStrArr = (v: unknown): string[] => Array.isArray(v) ? (v.filter((x) => typeof x === "string") as string[]) : [];
+
+export type TimelineEvent = {
+  id: string;
+  date: string;
+  t: number;
+  title: string;
+  text: string;
+  tags: string[];
+};
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  return h.startsWith("#") ? h.slice(1) : h;
+}
+
+function setHashId(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    url.hash = id ? "#" + id : "";
+    window.history.replaceState(null, "", url.toString());
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  } catch {
+  }
+}
+
+function useHashId(): string {
+  return useSyncExternalStore(
+    (cb) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => readHashId(),
+    () => ""
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function parseTime(dateStr: string): number {
+  if (!dateStr) return 0;
+  const t = Date.parse(dateStr);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function pickDate(o: Obj): string {
+  const candidates = [o["date"], o["day"], o["when"], o["timestamp"], o["ts"]];
+  for (const c of candidates) {
+    const s = asStr(c);
+    if (s) return s;
+  }
+  return "";
+}
+
+function pickTitle(o: Obj): string {
+  const candidates = [o["title"], o["name"], o["label"], o["what"]];
+  for (const c of candidates) {
+    const s = asStr(c);
+    if (s) return s;
+  }
+  return "Evento";
+}
+
+function pickText(o: Obj): string {
+  const candidates = [o["text"], o["desc"], o["description"], o["note"], o["body"]];
+  for (const c of candidates) {
+    const s = asStr(c);
+    if (s) return s;
+  }
+  return "";
+}
+
+function pickId(o: Obj, fallback: string): string {
+  const s = asStr(o["id"]);
+  return s || fallback;
+}
+
+function normalize(items: unknown[]): TimelineEvent[] {
+  const out: TimelineEvent[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!isObj(it)) continue;
+    const date = pickDate(it);
+    const title = pickTitle(it);
+    const text = pickText(it);
+    const tags = asStrArr(it["tags"]).slice(0, 12);
+    const t = parseTime(date);
+    const fallbackId = "e" + String(i) + (date ? "-" + date.replace(/[^0-9]/g, "") : "");
+    const id = pickId(it, fallbackId);
+    out.push({ id, date, t, title, text, tags });
+  }
+  out.sort((a, b) => (b.t || 0) - (a.t || 0));
+  return out;
+}
+
+export function TimelineV2(props: { slug: string; title: string; items: unknown[] }) {
+  const activeId = useHashId();
+  const [q, setQ] = useState<string>("");
+  const [tag, setTag] = useState<string>("");
+
+  const events = useMemo(() => normalize(props.items || []), [props.items]);
+
+  const allTags = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of events) {
+      for (const t of e.tags) m.set(t, (m.get(t) || 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).map((x) => x[0]).slice(0, 18);
+  }, [events]);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return events.filter((e) => {
+      if (tag && !e.tags.includes(tag)) return false;
+      if (!qq) return true;
+      const hay = (e.title + " " + e.text + " " + e.date + " " + e.tags.join(" ")).toLowerCase();
+      return hay.includes(qq);
+    });
+  }, [events, q, tag]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const el = document.getElementById(activeId);
+    if (!el) return;
+    const t = setTimeout(() => {
+      try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
+    }, 20);
+    return () => clearTimeout(t);
+  }, [activeId]);
+
+  const onFocus = useCallback((id: string) => setHashId(id), []);
+  const onClearFocus = useCallback(() => setHashId(""), []);
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <header style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.22)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Linha do Tempo V2</div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>{props.title}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, opacity: 0.85, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+              Foco: {activeId ? "#" + activeId : "nenhum"}
+            </span>
+            <button type="button" onClick={onClearFocus} title="Limpar foco (remover hash)" style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}>
+              Limpar foco
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar (título, texto, data, tags)..."
+            style={{ flex: "1 1 260px", minWidth: 220, padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+          />
+          <button type="button" onClick={() => { setQ(""); setTag(""); }} style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}>
+            Limpar filtros
+          </button>
+        </div>
+
+        {allTags.length ? (
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            {allTags.map((t) => {
+              const on = tag === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTag(on ? "" : t)}
+                  style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "6px 10px", borderRadius: 999, background: on ? "var(--accent)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: on ? "#111" : "inherit" }}
+                  title="Filtrar por tag"
+                >
+                  #{t}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </header>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {filtered.length === 0 ? (
+          <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 14, opacity: 0.85 }}>
+            Nenhum evento encontrado. Dica: a linha do tempo é derivada do que existir no mapa/points do caderno.
+          </div>
+        ) : null}
+
+        {filtered.map((e) => {
+          const isActive = activeId && activeId === e.id;
+          const subtitle = (e.date ? e.date : "sem data") + (e.tags.length ? " • " + e.tags.map((t) => "#" + t).join(" ") : "");
+          return (
+            <section key={e.id} id={e.id} style={{ borderRadius: 14, padding: 12, border: isActive ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.18)" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 240, flex: "1 1 320px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button type="button" onClick={() => onFocus(e.id)} title="Definir foco via hash" style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "6px 10px", borderRadius: 999, background: isActive ? "var(--accent)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: isActive ? "#111" : "inherit" }}>
+                      #{e.id}
+                    </button>
+                    <div style={{ fontSize: 14, fontWeight: 950 }}>{e.title}</div>
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>{subtitle}</div>
+                  {e.text ? <div style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95, whiteSpace: "pre-wrap" }}>{e.text}</div> : null}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    title="Copiar texto"
+                    style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                    onClick={async () => {
+                      const payload = (e.title ? e.title + "\\n" : "") + (e.date ? ("Data: " + e.date + "\\n") : "") + (e.tags.length ? ("Tags: " + e.tags.join(", ") + "\\n") : "") + (e.text || "");
+                      const ok = await copyText(payload);
+                      if (!ok) alert("Não consegui copiar aqui. Tenta manualmente.");
+                    }}
+                  >
+                    Copiar
+                  </button>
+                  <button type="button" title="Focar (hash) e destacar" style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }} onClick={() => onFocus(e.id)}>
+                    Focar
+                  </button>
+                </div>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default TimelineV2;

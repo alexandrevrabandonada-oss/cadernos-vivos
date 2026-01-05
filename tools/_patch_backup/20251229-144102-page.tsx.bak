@@ -1,0 +1,66 @@
+import V2Nav from "@/components/v2/V2Nav";
+import HomeV2 from "@/components/v2/HomeV2";
+import { loadCadernoV2 } from "@/lib/v2";
+import type { JsonValue } from "@/lib/v2/types";
+
+type PageProps = {
+  params: { slug: string };
+};
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function getJson(v: unknown): JsonValue | null {
+  return (v as JsonValue) ?? null;
+}
+
+function pickTitle(data: unknown, slug: string): string {
+  if (!isObj(data)) return slug;
+  const meta = data["meta"];
+  if (isObj(meta) && typeof meta["title"] === "string" && String(meta["title"]).trim().length > 0) {
+    return String(meta["title"]);
+  }
+  if (typeof data["title"] === "string" && String(data["title"]).trim().length > 0) {
+    return String(data["title"]);
+  }
+  return slug;
+}
+
+function countArrFromJson(v: JsonValue | null, keys: string[]): number | undefined {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const o = v as Record<string, JsonValue>;
+  for (const k of keys) {
+    const x = o[k];
+    if (Array.isArray(x)) return x.length;
+  }
+  return undefined;
+}
+
+export default async function Page(props: PageProps) {
+  const slug = props.params.slug;
+  const data = await loadCadernoV2(slug);
+  const title = pickTitle(data, slug);
+
+  const d = isObj(data) ? data : {};
+  const panorama = ("panorama" in d) ? getJson(d["panorama"]) : null;
+  const mapa = ("mapa" in d) ? getJson(d["mapa"]) : null;
+  const debate = ("debate" in d) ? getJson(d["debate"]) : null;
+  const provas = ("acervo" in d) ? getJson(d["acervo"]) : (("provas" in d) ? getJson(d["provas"]) : null);
+  const trilhas = ("trilhas" in d) ? getJson(d["trilhas"]) : null;
+
+  const counts = {
+    nodes: countArrFromJson(mapa, ["nodes", "pontos", "points"]),
+    edges: countArrFromJson(mapa, ["edges", "links", "conexoes", "conexões"]),
+    threads: countArrFromJson(debate, ["threads", "topicos", "tópicos", "items"]),
+    provas: countArrFromJson(provas, ["items", "provas", "evidencias", "evidências", "docs"]),
+    trilhas: countArrFromJson(trilhas, ["items", "trilhas", "tracks"])
+  };
+
+  return (
+    <main style={{ display: "flex", flexDirection: "column", gap: 12, padding: 14 }}>
+      <V2Nav slug={slug} active="home" />
+      <HomeV2 slug={slug} title={title} panorama={panorama} counts={counts} />
+    </main>
+  );
+}

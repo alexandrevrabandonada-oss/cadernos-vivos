@@ -1,0 +1,186 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+
+type AnyObj = Record<string, unknown>;
+function isObj(v: unknown): v is AnyObj { return !!v && typeof v === "object" && !Array.isArray(v); }
+function asStr(v: unknown): string | null { return (typeof v === "string" && v.trim()) ? v.trim() : null; }
+function asStrArr(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(x => asStr(x)).filter((x): x is string => !!x);
+  const s = asStr(v);
+  if (!s) return [];
+  return s.split(",").map(t => t.trim()).filter(Boolean);
+}
+function getFirst(obj: AnyObj, keys: string[]): unknown {
+  for (const k of keys) { if (k in obj) return obj[k]; }
+  return undefined;
+}
+
+type TimelineItem = {
+  id: string;
+  title: string;
+  kind: string;
+  tags: string[];
+  dateLabel: string | null;
+  sortKey: number | null;
+  url: string | null;
+  excerpt: string | null;
+};
+
+function parseSortKey(obj: AnyObj): { sortKey: number | null; dateLabel: string | null } {
+  const d = asStr(getFirst(obj, ["date","day","when"]));
+  if (d) {
+    const ms = Date.parse(d);
+    if (!Number.isNaN(ms)) return { sortKey: ms, dateLabel: d };
+  }
+  const y = getFirst(obj, ["ano","year"]);
+  if (typeof y === "number" && y > 0 && y < 3000) return { sortKey: Date.UTC(y,0,1), dateLabel: String(y) };
+  if (typeof y === "string") {
+    const n = Number(y);
+    if (!Number.isNaN(n) && n > 0 && n < 3000) return { sortKey: Date.UTC(n,0,1), dateLabel: y };
+  }
+  return { sortKey: null, dateLabel: null };
+}
+
+function extractNodes(mapa: unknown): AnyObj[] {
+  if (Array.isArray(mapa)) return mapa.filter(isObj);
+  if (isObj(mapa)) {
+    const nodes = (mapa as AnyObj).nodes;
+    if (Array.isArray(nodes)) return nodes.filter(isObj);
+    if (isObj(nodes)) return Object.values(nodes).filter(isObj) as AnyObj[];
+  }
+  return [];
+}
+
+function toItem(n: AnyObj, idx: number): TimelineItem {
+  const id = asStr(getFirst(n, ["id","slug","key","uid"])) ?? ("node-" + String(idx));
+  const title = asStr(getFirst(n, ["title","label","name"])) ?? id;
+  const kind = asStr(getFirst(n, ["kind","type"])) ?? "node";
+  const tags = asStrArr(getFirst(n, ["tags","tag"]));
+  const { sortKey, dateLabel } = parseSortKey(n);
+  const url = asStr(getFirst(n, ["url","link","source","href"]));
+  const excerpt = asStr(getFirst(n, ["excerpt","summary","desc","description","text"]));
+  return { id, title, kind, tags, sortKey, dateLabel, url, excerpt };
+}
+
+export default function TimelineV2(props: { slug: string; title?: string; mapa?: unknown }) {
+  const slug = props.slug;
+  const items = useMemo(() => {
+    const nodes = extractNodes(props.mapa);
+    const list = nodes.map((n, i) => toItem(n, i));
+    const withDate: TimelineItem[] = [];
+    const withoutDate: TimelineItem[] = [];
+    for (const it of list) (it.sortKey == null ? withoutDate : withDate).push(it);
+    withDate.sort((a,b) => (a.sortKey! - b.sortKey!) || a.title.localeCompare(b.title));
+    withoutDate.sort((a,b) => a.title.localeCompare(b.title));
+    return withDate.concat(withoutDate);
+  }, [props.mapa]);
+
+  const kinds = useMemo(() => Array.from(new Set(items.map(i => i.kind))).sort(), [items]);
+  const tags = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) for (const t of it.tags) s.add(t);
+    return Array.from(s).sort();
+  }, [items]);
+
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<string>("");
+  const [tag, setTag] = useState<string>("");
+  const [copied, setCopied] = useState<string>("");
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return items.filter(it => {
+      if (kind && it.kind !== kind) return false;
+      if (tag && !it.tags.includes(tag)) return false;
+      if (!qq) return true;
+      const hay = (it.title + " " + it.kind + " " + it.tags.join(" ") + " " + (it.excerpt ?? "")).toLowerCase();
+      return hay.includes(qq);
+    });
+  }, [items, q, kind, tag]);
+
+  async function copyAnchor(it: TimelineItem) {
+    try {
+      const hash = "#t-" + it.id;
+      const url = window.location.origin + window.location.pathname + hash;
+      await navigator.clipboard.writeText(url);
+      setCopied(it.id);
+      const el = document.getElementById(hash.slice(1));
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTimeout(() => setCopied(""), 1200);
+    } catch {
+      /* noop */
+    }
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="card p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-xs muted">Linha do tempo • derivada do mapa</div>
+          <div className="ml-auto text-xs muted">
+            <Link className="underline" href={"/c/" + slug + "/v2"}>V2 Home</Link>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <input
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="buscar…" 
+            className="card px-3 py-2 text-sm bg-transparent"
+            style={{ minWidth: 220 }}
+          />
+          <select value={kind} onChange={e => setKind(e.target.value)} className="card px-3 py-2 text-sm bg-transparent">
+            <option value="">tipo: todos</option>
+            {kinds.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+          <select value={tag} onChange={e => setTag(e.target.value)} className="card px-3 py-2 text-sm bg-transparent">
+            <option value="">tag: todas</option>
+            {tags.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button type="button" onClick={() => { setQ(""); setKind(""); setTag(""); }} className="card px-3 py-2 text-sm hover:bg-white/10 transition">
+            limpar
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {filtered.length === 0 ? <div className="card p-5 muted">Nada encontrado.</div> : null}
+        {filtered.map(it => (
+          <div key={it.id} id={"t-" + it.id} className="card p-5">
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="min-w-0">
+                <div className="text-xs muted">{it.dateLabel ? it.dateLabel + " • " : ""}{it.kind}</div>
+                <h3 className="text-xl font-semibold leading-tight mt-1">{it.title}</h3>
+              </div>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <button type="button" onClick={() => copyAnchor(it)} className="card px-3 py-2 text-sm hover:bg-white/10 transition">
+                  {copied === it.id ? "copiado" : "copiar link"}
+                </button>
+                {it.url ? (
+                  <a className="card px-3 py-2 text-sm hover:bg-white/10 transition" href={it.url} target="_blank" rel="noreferrer">
+                    abrir fonte
+                  </a>
+                ) : null}
+              </div>
+            </div>
+
+            {it.excerpt ? <p className="mt-3 muted">{it.excerpt}</p> : null}
+
+            {it.tags.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {it.tags.map(t => (
+                  <button key={t} type="button" onClick={() => setTag(t)} className="card px-3 py-1 text-xs hover:bg-white/10 transition" style={{ opacity: 0.9 }} title="filtrar por tag">
+                    {t}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}

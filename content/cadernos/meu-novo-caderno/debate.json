@@ -1,0 +1,8 @@
+[
+  { "id": "P1", "title": "O que está acontecendo (sem moralismo)?", "prompt": "Descreva o fenômeno como estrutura: rotina, território, fontes prováveis, falta de proteção." },
+  { "id": "P2", "title": "Quem paga o custo (território)?", "prompt": "Use a tríade: Exposição • Vulnerabilidade • Proteção. Onde pesa mais e por quê?" },
+  { "id": "P3", "title": "Que dado falta (sem travar)?", "prompt": "O que você precisaria medir/confirmar? E qual proxy dá pra usar enquanto isso?" },
+  { "id": "P4", "title": "Cuidado público mínimo", "prompt": "Liste 3 coisas concretas: (1) informação/dado; (2) infraestrutura de respiro (sombra, água, banheiro, abrigo); (3) resposta pública quando piora." },
+  { "id": "P5", "title": "Trabalho digno no centro", "prompt": "Como essa camada afeta quem trabalha (turno, calor, poeira, deslocamento)? O que seria proteção real no cotidiano?" },
+  { "id": "P6", "title": "Saída prática", "prompt": "Qual pedido concreto dá pra fazer hoje? Qual ação simples de ajuda mútua dá pra iniciar em 10 minutos?" }
+]

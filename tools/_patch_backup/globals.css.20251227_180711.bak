@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+:root {
+  --bg: #0b0b0b;
+  --fg: #f2f2f2;
+  --muted: rgba(242,242,242,0.70);
+  --card: rgba(255,255,255,0.06);
+  --accent: #ffd200;
+}
+
+body { background: var(--bg); color: var(--fg); }
+
+.zen-backdrop { position: relative; overflow: hidden; }
+.zen-backdrop::before {
+  content: ""; position: absolute; inset: -40px;
+  background-image:
+    radial-gradient(circle at 30% 15%, rgba(255,210,0,0.10), transparent 55%),
+    radial-gradient(circle at 80% 70%, rgba(255,255,255,0.06), transparent 50%),
+    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 35%);
+  pointer-events: none;
+}
+.zen-backdrop::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.10;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; }
+.muted { color: rgba(242,242,242,0.70); }
+.accent { color: var(--accent); }
+
+.enso {
+  width: 56px; height: 56px; border-radius: 9999px;
+  border: 6px solid rgba(255,255,255,0.14);
+  border-top-color: var(--accent);
+  transform: rotate(-12deg);
+}

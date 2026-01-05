@@ -1,0 +1,88 @@
+import type { JsonValue } from "@/lib/v2/types";
+
+function asObj(v: unknown): Record<string, JsonValue> | null {
+  if (!v || typeof v !== "object") return null;
+  if (Array.isArray(v)) return null;
+  return v as Record<string, JsonValue>;
+}
+
+function asArr(v: unknown): JsonValue[] {
+  return Array.isArray(v) ? (v as JsonValue[]) : [];
+}
+
+function toText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return "";
+}
+
+function whenKey(o: Record<string, JsonValue>): number | null {
+  const raw = toText(o["date"] ?? o["day"] ?? o["when"] ?? o["ano"] ?? o["year"]);
+  if (!raw) return null;
+  if (/^\\d{4}$/.test(raw)) {
+    const t = Date.parse(raw + "-01-01T00:00:00Z");
+    return Number.isFinite(t) ? t : null;
+  }
+  const t2 = Date.parse(raw);
+  return Number.isFinite(t2) ? t2 : null;
+}
+
+export default function TimelineV2({ items }: { items: JsonValue }) {
+  const arr = Array.isArray(items) ? (items as JsonValue[]) : asArr((asObj(items) || {})["items"]);
+
+  const normalized = arr.map((it, i) => {
+    const o = asObj(it) || {};
+    const id = toText(o["id"]) || ("t" + (i + 1));
+    const title = toText(o["title"] ?? o["name"] ?? o["titulo"]) || ("Item " + (i + 1));
+    const when = toText(o["date"] ?? o["day"] ?? o["when"] ?? o["ano"] ?? o["year"]);
+    const kind = toText(o["kind"] ?? o["type"] ?? o["tipo"]);
+    const url = toText(o["url"] ?? o["link"]);
+    return { id, title, when, kind, url, _k: whenKey(o) };
+  });
+
+  normalized.sort((a, b) => {
+    if (a._k === null && b._k === null) return 0;
+    if (a._k === null) return 1;
+    if (b._k === null) return -1;
+    return a._k - b._k;
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="text-sm opacity-70">Linha do tempo</div>
+        <div className="text-xl font-semibold">Derivada do mapa</div>
+        <div className="mt-1 text-sm opacity-70">V2 placeholder estável.</div>
+      </div>
+
+      {normalized.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm opacity-70">
+          Sem itens na linha do tempo.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {normalized.map((it) => (
+            <div key={it.id} id={it.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-base font-semibold">{it.title}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs opacity-70">
+                    {it.when ? <span>{it.when}</span> : null}
+                    {it.kind ? <span>• {it.kind}</span> : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a className="rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-xs hover:bg-black/40" href={"#" + it.id}>Link</a>
+                  {it.url ? (
+                    <a className="rounded-lg border border-white/10 bg-black/30 px-3 py-1 text-xs hover:bg-black/40" href={it.url} target="_blank" rel="noreferrer">Fonte</a>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

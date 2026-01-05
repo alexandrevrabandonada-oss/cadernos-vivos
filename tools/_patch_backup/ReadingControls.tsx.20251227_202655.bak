@@ -1,0 +1,91 @@
+/* eslint-disable react/no-unescaped-entities */
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type Prefs = { reading: boolean; contrast: boolean };
+
+function readPrefs(): Prefs {
+  try {
+    const raw = localStorage.getItem("cv:ui:prefs:v1");
+    if (!raw) return { reading: false, contrast: false };
+    const obj = JSON.parse(raw) as Partial<Prefs>;
+    return { reading: !!obj.reading, contrast: !!obj.contrast };
+  } catch {
+    return { reading: false, contrast: false };
+  }
+}
+
+function writePrefs(p: Prefs) {
+  try { localStorage.setItem("cv:ui:prefs:v1", JSON.stringify(p)); } catch {}
+}
+
+function speakMain() {
+  try {
+    const anyWin = window as unknown as { speechSynthesis?: SpeechSynthesis };
+    if (!anyWin.speechSynthesis) return;
+    anyWin.speechSynthesis.cancel();
+    const el = document.getElementById("cv-main");
+    const text = (el?.innerText || "").replace(/\\s+/g, " ").trim();
+    if (!text) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "pt-BR";
+    anyWin.speechSynthesis.speak(u);
+  } catch {}
+}
+
+function stopSpeak() {
+  try {
+    const anyWin = window as unknown as { speechSynthesis?: SpeechSynthesis };
+    if (!anyWin.speechSynthesis) return;
+    anyWin.speechSynthesis.cancel();
+  } catch {}
+}
+
+export default function ReadingControls() {
+  const init = useMemo(() => readPrefs(), []);
+  const [reading, setReading] = useState<boolean>(init.reading);
+  const [contrast, setContrast] = useState<boolean>(init.contrast);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.reading = reading ? "1" : "0";
+    root.dataset.contrast = contrast ? "1" : "0";
+    writePrefs({ reading, contrast });
+  }, [reading, contrast]);
+
+  return (
+    <section className="card p-4 flex flex-wrap items-center gap-2" aria-label="Controles de leitura e acessibilidade">
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        aria-pressed={reading}
+        onClick={() => setReading((v) => !v)}
+      >
+        <span className="accent">Modo leitura</span>
+      </button>
+
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        aria-pressed={contrast}
+        onClick={() => setContrast((v) => !v)}
+      >
+        <span className="accent">Alto contraste</span>
+      </button>
+
+      <div className="ml-auto flex flex-wrap gap-2">
+        <button type="button" className="card px-3 py-2 hover:bg-white/10 transition" onClick={speakMain}>
+          <span className="accent">Ouvir</span>
+        </button>
+        <button type="button" className="card px-3 py-2 hover:bg-white/10 transition" onClick={stopSpeak}>
+          Parar
+        </button>
+      </div>
+
+      <div className="w-full text-xs muted mt-2">
+        Dica: use Tab para navegar. O link &quot;Pular para o conteúdo&quot; aparece ao focar no topo.
+      </div>
+    </section>
+  );
+}

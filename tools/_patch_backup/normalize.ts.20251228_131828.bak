@@ -1,0 +1,85 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+import type { AcervoV2, CadernoV2, DebateV2, JsonValue, MapaV2, MetaV2, RegistroV2, UiDefault } from "./types";
+
+function asObj(v: unknown): Record<string, JsonValue> | null {
+  if (!v || typeof v !== "object") return null;
+  return v as Record<string, JsonValue>;
+}
+
+function asStr(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function safeParseJson(text: string, issues: string[], label: string): JsonValue {
+  try { return JSON.parse(text) as JsonValue; }
+  catch { issues.push("bad_json:" + label); return {}; }
+}
+
+export function normalizeMeta(slug: string, raw: unknown, issues: string[]): MetaV2 {
+  const o = asObj(raw) || {};
+  const title = asStr(o["title"]) || slug;
+  const mood = asStr(o["mood"]) || asStr(o["universe"]) || asStr(o["theme"]) || asStr(o["tone"]);
+  const uiObj = asObj(o["ui"]);
+  const uiDef = (asStr(uiObj ? uiObj["default"] : undefined) as UiDefault | undefined) || "v1";
+  const meta: MetaV2 = {
+    slug,
+    title,
+    subtitle: asStr(o["subtitle"]) ?? null,
+    mood: mood,
+    accent: asStr(o["accent"]) ?? null,
+    ethos: asStr(o["ethos"]) ?? null,
+    ui: { default: uiDef },
+  };
+  // preserva chaves extras (superset)
+  for (const k of Object.keys(o)) {
+    if ((meta as Record<string, JsonValue>)[k] === undefined) (meta as Record<string, JsonValue>)[k] = o[k];
+  }
+  if (!asStr(o["title"])) issues.push("meta_default:title");
+  if (!mood) issues.push("meta_default:mood");
+  return meta;
+}
+
+export function normalizeMapa(raw: JsonValue, issues: string[]): MapaV2 {
+  const o = (raw && typeof raw === "object") ? (raw as Record<string, JsonValue>) : {};
+  const nodesRaw = o["nodes"];
+  const nodes = Array.isArray(nodesRaw) ? nodesRaw : [];
+  if (!Array.isArray(nodesRaw)) issues.push("mapa_default:nodes");
+  return { ...(o as any), nodes: nodes as any };
+}
+
+export function normalizeAcervo(raw: JsonValue, issues: string[]): AcervoV2 {
+  const o = (raw && typeof raw === "object") ? (raw as Record<string, JsonValue>) : {};
+  const itemsRaw = o["items"];
+  const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+  if (!Array.isArray(itemsRaw)) issues.push("acervo_default:items");
+  return { ...(o as any), items: items as any };
+}
+
+export function normalizeDebate(raw: JsonValue, _issues: string[]): DebateV2 {
+  return (raw && typeof raw === "object") ? (raw as any) : {};
+}
+
+export function normalizeRegistro(raw: JsonValue, _issues: string[]): RegistroV2 {
+  return (raw && typeof raw === "object") ? (raw as any) : {};
+}
+
+export function normalizeCaderno(input: { slug: string; metaRaw: unknown; panoramaMd: string; referenciasMd: string; mapaRaw: string; acervoRaw: string; debateRaw: string; registroRaw: string; aulas: { slug: string; num: number; markdown: string }[] }): CadernoV2 {
+  const issues: string[] = [];
+  const mapaJ = safeParseJson(input.mapaRaw, issues, "mapa.json");
+  const acervoJ = safeParseJson(input.acervoRaw, issues, "acervo.json");
+  const debateJ = safeParseJson(input.debateRaw, issues, "debate.json");
+  const registroJ = safeParseJson(input.registroRaw, issues, "registro.json");
+  const meta = normalizeMeta(input.slug, input.metaRaw, issues);
+  const mapa = normalizeMapa(mapaJ, issues);
+  const acervo = normalizeAcervo(acervoJ, issues);
+  const debate = normalizeDebate(debateJ, issues);
+  const registro = normalizeRegistro(registroJ, issues);
+  return {
+    meta,
+    panoramaMd: input.panoramaMd || "",
+    referenciasMd: input.referenciasMd || "",
+    mapa, acervo, debate, registro,
+    aulas: input.aulas || [],
+    issues,
+  };
+}

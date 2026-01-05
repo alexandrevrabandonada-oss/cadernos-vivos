@@ -1,0 +1,41 @@
+import { notFound } from "next/navigation";
+import type { CSSProperties } from "react";
+import { getCaderno, getAcervo } from "@/lib/cadernos";
+import V2Nav from "@/components/v2/V2Nav";
+import { ProvasV2, type ProvaItem } from "@/components/v2/ProvasV2";
+
+type AccentStyle = CSSProperties & Record<"--accent", string>;
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let data: Awaited<ReturnType<typeof getCaderno>>;
+  try {
+    data = await getCaderno(slug);
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err && err.code === "ENOENT") return notFound();
+    throw e;
+  }
+
+  const title = data.meta?.title ?? slug;
+  const accent = data.meta?.accent ?? "#F7C600";
+  const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
+
+  let items: any[] = [];
+  try {
+    const got = await getAcervo(slug);
+    items = Array.isArray(got) ? got : [];
+  } catch {
+    items = [];
+  }
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
+      <V2Nav slug={slug} active="provas" />
+      <div style={{ marginTop: 12 }}>
+        <ProvasV2 slug={slug} title={title} items={items as ProvaItem[]} />
+      </div>
+    </main>
+  );
+}

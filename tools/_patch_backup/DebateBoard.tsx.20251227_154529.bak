@@ -1,0 +1,180 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+
+export type DebatePrompt = { id: string; title: string; prompt: string };
+
+type Saved = {
+  answers: Record<string, string>;
+  pedidoConcreto: string;
+  acaoAjudaMutua: string;
+};
+
+function slugFromParams(p: unknown): string | undefined {
+  if (!p || typeof p !== "object") return;
+  const v = (p as Record<string, unknown>).slug;
+  return typeof v === "string" ? v : undefined;
+}
+
+function keyFor(slug: string) {
+  return `cv:${slug}:debate:v1`;
+}
+
+function emptySaved(): Saved {
+  return { answers: {}, pedidoConcreto: "", acaoAjudaMutua: "" };
+}
+
+function safeGetItem(k: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(k: string, v: string) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(k, v);
+  } catch {}
+}
+
+function safeRemoveItem(k: string) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(k);
+  } catch {}
+}
+
+function loadSaved(k: string): Saved {
+  try {
+    const raw = safeGetItem(k);
+    if (!raw) return emptySaved();
+    const data = JSON.parse(raw) as Partial<Saved>;
+    return {
+      answers: (data.answers as Record<string, string>) || {},
+      pedidoConcreto: (data.pedidoConcreto as string) || "",
+      acaoAjudaMutua: (data.acaoAjudaMutua as string) || "",
+    };
+  } catch {
+    return emptySaved();
+  }
+}
+
+export default function DebateBoard({
+  slug,
+  prompts,
+}: {
+  slug?: string;
+  prompts: DebatePrompt[];
+}) {
+  const params = useParams();
+  const s = slug ?? slugFromParams(params);
+  if (!s) return null;
+
+  const k = useMemo(() => keyFor(s), [s]);
+  const init = useMemo(() => loadSaved(k), [k]);
+
+  const [answers, setAnswers] = useState<Record<string, string>>(init.answers);
+  const [pedidoConcreto, setPedido] = useState(init.pedidoConcreto);
+  const [acaoAjudaMutua, setAcao] = useState(init.acaoAjudaMutua);
+  const [status, setStatus] = useState<"" | "salvo" | "copiado">("");
+
+  const save = () => {
+    try {
+      const data: Saved = { answers, pedidoConcreto, acaoAjudaMutua };
+      safeSetItem(k, JSON.stringify(data));
+      setStatus("salvo");
+      setTimeout(() => setStatus(""), 1200);
+    } catch {}
+  };
+
+  const copy = async () => {
+    try {
+      const payload = { slug: s, answers, pedidoConcreto, acaoAjudaMutua };
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setStatus("copiado");
+      setTimeout(() => setStatus(""), 1200);
+    } catch {}
+  };
+
+  const clearAll = () => {
+    setAnswers({});
+    setPedido("");
+    setAcao("");
+    safeRemoveItem(k);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <h3 className="text-lg font-semibold">Sem tribunal</h3>
+        <p className="muted mt-2">
+          Debate aqui é ferramenta de cuidado e organização: diagnóstico estrutural, linguagem concreta, e saída prática.
+        </p>
+        <div className="mt-4 grid gap-2 text-sm muted">
+          <div>• Evitar moralismo / caça às bruxas.</div>
+          <div>
+            • Sempre terminar com: <span className="accent">pedido concreto</span> +{" "}
+            <span className="accent">ação simples de ajuda mútua</span>.
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        {prompts.map((p) => (
+          <div key={p.id} className="card p-5">
+            <div className="text-xs muted">{p.id}</div>
+            <div className="text-lg font-semibold mt-1">{p.title}</div>
+            <div className="muted mt-2 whitespace-pre-wrap">{p.prompt}</div>
+            <textarea
+              className="mt-4 w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+              rows={5}
+              value={answers[p.id] || ""}
+              onChange={(e) => setAnswers((prev) => ({ ...prev, [p.id]: e.target.value }))}
+              placeholder="Escreva sua síntese (sem pânico, sem tribunal)."
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="card p-5">
+        <h3 className="text-lg font-semibold">Fechamento obrigatório</h3>
+        <div className="grid gap-3 mt-3">
+          <div>
+            <div className="text-sm muted">Pedido concreto (poder público / empresa / órgão / bairro)</div>
+            <textarea
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+              rows={3}
+              value={pedidoConcreto}
+              onChange={(e) => setPedido(e.target.value)}
+            />
+          </div>
+          <div>
+            <div className="text-sm muted">Ação simples de ajuda mútua (2–10 min)</div>
+            <textarea
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+              rows={3}
+              value={acaoAjudaMutua}
+              onChange={(e) => setAcao(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={save}>
+            <span className="accent">{status === "salvo" ? "Salvo!" : "Salvar"}</span>
+          </button>
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={copy}>
+            <span className="accent">{status === "copiado" ? "Copiado!" : "Copiar JSON"}</span>
+          </button>
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={clearAll}>
+            Limpar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,51 @@
+import Link from "next/link";
+import MapaCanvasV2 from "@/components/v2/MapaCanvasV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let title = slug;
+  let mapa: unknown = { nodes: [], edges: [] };
+
+  try {
+    const c = await loadCadernoV2(slug);
+    const cObj = isObj(c) ? c : null;
+    const metaObj = cObj && isObj(cObj["meta"]) ? (cObj["meta"] as Record<string, unknown>) : null;
+    title = asStr(metaObj ? metaObj["title"] : null) || slug;
+    mapa = cObj ? cObj["mapa"] : mapa;
+  } catch {
+    // ok
+  }
+
+  return (
+    <main style={{ padding: 24, maxWidth: 1240, margin: "0 auto" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ opacity: 0.75, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}>Concreto Zen • V2</div>
+          <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.03em", marginTop: 6 }}>Mapa</h1>
+          <p style={{ marginTop: 6, opacity: 0.85 }}>{title}</p>
+        </div>
+        <nav style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug + "/v2"} style={{ textDecoration: "underline" }}>← Home V2</Link>
+          <Link href={"/c/" + slug} style={{ textDecoration: "underline" }}>V1</Link>
+        </nav>
+      </header>
+
+      <section style={{ marginTop: 14 }}>
+        <MapaCanvasV2 slug={slug} title={title} mapa={mapa} />
+      </section>
+
+      <footer style={{ marginTop: 18, opacity: 0.6, fontSize: 12 }}>
+        Próximo: Tijolo D3 (Debate V2: perguntas + posições + provas).
+      </footer>
+    </main>
+  );
+}

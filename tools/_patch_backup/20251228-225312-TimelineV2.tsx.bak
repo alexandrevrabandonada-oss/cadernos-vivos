@@ -1,0 +1,59 @@
+import type { JsonValue } from "@/lib/v2/types";
+
+function asObj(v: unknown): Record<string, JsonValue> | null {
+  if (!v || typeof v !== "object") return null;
+  return v as Record<string, JsonValue>;
+}
+function asArr(v: JsonValue | undefined): JsonValue[] {
+  return Array.isArray(v) ? v : [];
+}
+function asStr(v: JsonValue | undefined): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asNum(v: JsonValue | undefined): number | null {
+  return typeof v === "number" ? v : null;
+}
+
+type Props = { slug: string; title: string; mapa: unknown };
+
+export default function TimelineV2({ slug, title, mapa }: Props) {
+  const o = asObj(mapa);
+  const nodes = asArr(o ? (o["nodes"] as JsonValue) : undefined);
+
+  return (
+    <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Linha do tempo V2</div>
+          <h2 style={{ fontSize: 18, margin: "4px 0 0 0" }}>{title}</h2>
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>slug: {slug}</div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+        {nodes.length === 0 ? (
+          <div style={{ opacity: 0.75, fontSize: 14 }}>
+            Sem nodes no mapa (mapa.json).
+          </div>
+        ) : (
+          nodes.map((n, i) => {
+            const no = asObj(n);
+            const id = asStr(no ? (no["id"] as JsonValue) : undefined) || String(i + 1);
+            const t = asStr(no ? (no["title"] as JsonValue) : undefined) || asStr(no ? (no["label"] as JsonValue) : undefined) || "Evento";
+            const date = asStr(no ? (no["date"] as JsonValue) : undefined) || asStr(no ? (no["day"] as JsonValue) : undefined) || asStr(no ? (no["when"] as JsonValue) : undefined);
+            const year = asNum(no ? (no["year"] as JsonValue) : undefined) || asNum(no ? (no["ano"] as JsonValue) : undefined);
+            const whenTxt = date ? date : (year ? String(year) : "sem data");
+            return (
+              <div key={id} id={id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+                  <div style={{ fontWeight: 700 }}>{t}</div>
+                  <div style={{ fontSize: 12, opacity: 0.7 }}>{whenTxt}</div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}

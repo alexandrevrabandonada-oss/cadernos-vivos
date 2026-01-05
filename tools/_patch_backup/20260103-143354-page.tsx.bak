@@ -1,0 +1,61 @@
+import { notFound } from "next/navigation";
+import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
+import V2Nav from "@/components/v2/V2Nav";
+import { HomeV2 } from "@/components/v2/HomeV2";
+
+type AccentStyle = CSSProperties & Record<"--accent", string>;
+type AnyObj = Record<string, unknown>;
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function pickSummary(data: unknown): string {
+  if (!isObj(data)) return "";
+  const meta = data["meta"];
+  if (isObj(meta)) {
+    const s1 = meta["subtitle"];
+    if (typeof s1 === "string" && s1.trim()) return s1;
+    const s2 = meta["summary"];
+    if (typeof s2 === "string" && s2.trim()) return s2;
+    const s3 = meta["descricao"];
+    if (typeof s3 === "string" && s3.trim()) return s3;
+  }
+  const pano = data["panorama"];
+  if (typeof pano === "string" && pano.trim()) return pano;
+  if (isObj(pano)) {
+    const ps = pano["summary"];
+    if (typeof ps === "string" && ps.trim()) return ps;
+    const pt = pano["texto"];
+    if (typeof pt === "string" && pt.trim()) return pt;
+  }
+  return "";
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let data: Awaited<ReturnType<typeof getCaderno>>;
+  try {
+    data = await getCaderno(slug);
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err && err.code === "ENOENT") return notFound();
+    throw e;
+  }
+
+  const title = data.meta?.title ?? slug;
+  const accent = data.meta?.accent ?? "#F7C600";
+  const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
+  const summary = pickSummary(data as unknown);
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
+      <V2Nav slug={slug} />
+      <div style={{ marginTop: 12 }}>
+        <HomeV2 slug={slug} title={title} summary={summary} />
+      </div>
+    </main>
+  );
+}

@@ -1,0 +1,27 @@
+import React from "react";
+import MapaCanvasV2 from "@/components/v2/MapaCanvasV2";
+import MapaDockV2 from "@/components/v2/MapaDockV2";
+
+export default function MapaV2(props: { slug: string; title?: string; mapa: unknown }) {
+  const title = props.title ?? props.slug;
+  const mapa = props.mapa;
+
+  return (
+    <section style={{ marginTop: 12 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, letterSpacing: 0.2 }}>Mapa</h1>
+          <div style={{ opacity: 0.75, marginTop: 2 }}>{title} • Concreto Zen</div>
+        </div>
+        <div style={{ opacity: 0.8, fontSize: 12 }}>
+          dica: use o hash (#id) para linkar um no especifico
+        </div>
+      </header>
+
+      <div style={{ marginTop: 12, display: "grid", gap: 12, gridTemplateColumns: "1.7fr 1fr", alignItems: "start" }}>
+        <MapaCanvasV2 mapa={mapa} />
+        <MapaDockV2 slug={props.slug} mapa={mapa} />
+      </div>
+    </section>
+  );
+}

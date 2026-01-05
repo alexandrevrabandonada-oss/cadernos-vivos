@@ -1,0 +1,26 @@
+import V2Nav from "@/components/v2/V2Nav";
+import ProvasV2 from "@/components/v2/ProvasV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const c = await loadCadernoV2(slug);
+
+  const title = (c.meta && c.meta.title ? c.meta.title : slug);
+  const acervo = c.acervo;
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: 16,
+        background: "#0b0b0c",
+        color: "white",
+      }}
+    >
+      <V2Nav slug={slug} active="provas" />
+      <div style={{ height: 12 }} />
+      <ProvasV2 slug={slug} title={title} acervo={acervo} />
+    </main>
+  );
+}

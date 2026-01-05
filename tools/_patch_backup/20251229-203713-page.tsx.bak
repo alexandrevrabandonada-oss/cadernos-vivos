@@ -1,0 +1,63 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import V2Nav from "@/components/v2/V2Nav";
+import { loadCadernoV2 } from "@/lib/v2";
+import { getTrailByIdV2 } from "@/lib/v2";
+
+function asTitle(v: unknown, fallback: string): string {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return fallback;
+}
+
+export default async function Page(props: { params: { slug: string; id: string } }) {
+  const slug = props.params.slug;
+  const id = props.params.id;
+  const caderno = await loadCadernoV2(slug);
+  const cTitle = asTitle((caderno as Record<string, unknown>)["title"], slug);
+  const trail = getTrailByIdV2(caderno, id);
+  if (!trail) return notFound();
+
+  const shareUrl = "/c/" + slug + "/v2/trilhas/" + trail.id;
+
+  return (
+    <main style={{ maxWidth: 980, margin: "0 auto", padding: 16 }}>
+      <header style={{ marginBottom: 12 }}>
+        <div style={{ opacity: 0.7, fontSize: 12 }}>Caderno: {cTitle}</div>
+        <h1 style={{ margin: "6px 0 10px 0", letterSpacing: 0.2 }}>{trail.title}</h1>
+        <V2Nav slug={slug} active="trilhas" />
+      </header>
+
+      <section style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, padding: 14 }}>
+        {trail.summary ? <div style={{ opacity: 0.9, lineHeight: 1.6 }}>{trail.summary}</div> : null}
+
+        {trail.steps && trail.steps.length ? (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>Passos</div>
+            <ol style={{ margin: 0, paddingLeft: 18, opacity: 0.9, lineHeight: 1.7 }}>
+              {trail.steps.map((s, i) => (
+                <li key={String(i) + s}>{s}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+
+        {trail.tags && trail.tags.length ? (
+          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap", opacity: 0.9 }}>
+            {trail.tags.map((tag) => (
+              <span key={tag} style={{ border: "1px solid rgba(255,255,255,0.12)", padding: "3px 8px", borderRadius: 999, fontSize: 12 }}>{tag}</span>
+            ))}
+          </div>
+        ) : null}
+
+        <div style={{ marginTop: 14, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug + "/v2/trilhas"} style={{ textDecoration: "underline" }}>Voltar</Link>
+          <Link href={shareUrl} style={{ textDecoration: "underline", opacity: 0.85 }}>Link</Link>
+        </div>
+      </section>
+
+      <footer style={{ marginTop: 18, opacity: 0.65, fontSize: 12 }}>
+        <div>V2 • Trilha #{trail.id}</div>
+      </footer>
+    </main>
+  );
+}

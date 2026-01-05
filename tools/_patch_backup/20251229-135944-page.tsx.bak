@@ -1,0 +1,19 @@
+import V2Nav from "@/components/v2/V2Nav";
+import HomeV2 from "@/components/v2/HomeV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const data = await loadCadernoV2(slug);
+  const title = (data && (data as any).meta && (data as any).meta.title) ? String((data as any).meta.title) : "Caderno";
+  const panorama = data ? (data as any).panorama : null;
+
+  return (
+    <main style={{ padding: 16 }}>
+      <V2Nav slug={slug} active="home" />
+      <section style={{ marginTop: 14 }}>
+        <HomeV2 slug={slug} title={title} panorama={panorama} />
+      </section>
+    </main>
+  );
+}

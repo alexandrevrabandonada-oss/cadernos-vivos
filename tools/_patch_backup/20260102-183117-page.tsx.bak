@@ -1,0 +1,36 @@
+import V2Nav from "@/components/v2/V2Nav";
+import ProvasV2 from "@/components/v2/ProvasV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+function titleFromMeta(meta: unknown, fallback: string): string {
+  if (typeof meta !== "object" || meta === null) return fallback;
+  const r = meta as { title?: unknown };
+  return typeof r.title === "string" && r.title.trim() ? r.title : fallback;
+}
+
+function qFrom(search: unknown): string {
+  if (typeof search !== "object" || search === null) return "";
+  const r = search as { q?: unknown };
+  return typeof r.q === "string" ? r.q : "";
+}
+
+export default async function Page(props: { params: Promise<{ slug: string }>; searchParams?: Promise<unknown> }) {
+  const slug = (await props.params).slug;
+  const c = await loadCadernoV2(slug);
+
+  const meta = (c as unknown as { meta?: unknown }).meta;
+  const title = titleFromMeta(meta, slug);
+
+  const bag = c as unknown as { provas?: unknown; acervo?: unknown; evidencias?: unknown; docs?: unknown; links?: unknown };
+  const provas = bag.provas ?? bag.evidencias ?? bag.acervo ?? bag.docs ?? bag.links ?? null;
+
+  const sp = props.searchParams ? await props.searchParams : null;
+  const initialQuery = qFrom(sp);
+
+  return (
+    <main style={{ padding: 18 }}>
+      <V2Nav slug={slug} active="provas" />
+      <ProvasV2 slug={slug} title={title} provas={provas} initialQuery={initialQuery} />
+    </main>
+  );
+}

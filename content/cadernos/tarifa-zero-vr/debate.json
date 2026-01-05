@@ -1,0 +1,19 @@
+{
+  "prompts": [
+    {
+      "title": "Diagnóstico estrutural",
+      "id": "d1",
+      "prompt": "O que na estrutura produz isso? (evitar moralismo e personagens mágicos)"
+    },
+    {
+      "title": "Quem lucra / quem paga",
+      "id": "d2",
+      "prompt": "Quem ganha e quem paga a conta? (tempo, saúde, dinheiro, território)"
+    },
+    {
+      "title": "Pedido concreto",
+      "id": "d3",
+      "prompt": "Qual pedido verificável, com prazo e responsável?"
+    }
+  ]
+}

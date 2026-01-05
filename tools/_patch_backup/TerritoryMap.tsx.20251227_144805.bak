@@ -1,0 +1,173 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+export type MapPoint = {
+  id: string;
+  title: string;
+  kind:
+    | "industrial"
+    | "agua"
+    | "saude"
+    | "transporte"
+    | "moradia"
+    | "educacao"
+    | "memoria"
+    | "ponto-critico"
+    | "mutirao";
+  x: number; // 0..100
+  y: number; // 0..100
+  address?: string;
+  note?: string;
+  links?: { label: string; href: string }[];
+};
+
+type Props = { slug: string; points: MapPoint[] };
+
+function kindLabel(k: MapPoint["kind"]) {
+  switch (k) {
+    case "industrial": return "Industrial";
+    case "agua": return "Água";
+    case "saude": return "Saúde";
+    case "transporte": return "Transporte";
+    case "moradia": return "Moradia";
+    case "educacao": return "Educação";
+    case "memoria": return "Memória";
+    case "ponto-critico": return "Ponto crítico";
+    case "mutirao": return "Mutirão";
+    default: return "Ponto";
+  }
+}
+
+export default function TerritoryMap({ slug, points }: Props) {
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<MapPoint["kind"] | "">("");
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [mode, setMode] = useState<"mapa" | "lista">("mapa");
+  const [status, setStatus] = useState<"" | "copiado">("");
+
+  const kinds = useMemo(() => {
+    const s = new Set<MapPoint["kind"]>();
+    for (const p of points) s.add(p.kind);
+    return Array.from(s);
+  }, [points]);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    return points.filter((p) => {
+      if (kind && p.kind !== kind) return false;
+      if (!qq) return true;
+      const hay = (p.title + " " + (p.address || "") + " " + (p.note || "")).toLowerCase();
+      return hay.includes(qq);
+    });
+  }, [points, q, kind]);
+
+  const selected = useMemo(() => {
+    if (!selectedId) return undefined;
+    return points.find((p) => p.id === selectedId);
+  }, [points, selectedId]);
+
+  const copyLink = async (id: string) => {
+    try {
+      const href = window.location.origin + "/c/" + slug + "/mapa#" + id;
+      await navigator.clipboard.writeText(href);
+      setStatus("copiado");
+      setTimeout(() => setStatus(""), 1200);
+    } catch {}
+  };
+
+  return (
+    <section className="card p-5 space-y-4">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Mapa do território</h2>
+          <p className="muted mt-1">Pontos de impacto e memória. Sem espetáculo: foco em cuidado e organização.</p>
+        </div>
+        <div className="flex gap-2">
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => setMode("mapa")}>Mapa</button>
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => setMode("lista")}>Lista</button>
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-3">
+        <div className="md:col-span-2">
+          <input
+            className="w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar (ex.: rio, CSN, hospital, bairro...)"
+          />
+        </div>
+        <div>
+          <select
+            className="w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+            value={kind}
+            onChange={(e) => setKind((e.target.value as MapPoint["kind"] | "") || "")}
+          >
+            <option value="">Todas as categorias</option>
+            {kinds.map((k) => (
+              <option key={k} value={k}>{kindLabel(k)}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {mode === "mapa" ? (
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <div className="text-sm muted mb-3">Clique nos pontos. Coordenadas são abstratas (0..100), só para leitura do território.</div>
+          <div className="relative w-full" style={{ height: 420 }}>
+            <div className="absolute inset-0 rounded-2xl border border-white/10 bg-gradient-to-b from-black/20 to-black/50" />
+            {filtered.map((p) => (
+              <button
+                key={p.id}
+                className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/30 bg-white/10 hover:bg-white/20 transition"
+                style={{ left: p.x + "%", top: p.y + "%", width: 14, height: 14 }}
+                title={p.title}
+                onClick={() => setSelectedId(p.id)}
+              />
+            ))}
+          </div>
+          <div className="mt-3 text-xs muted">Mostrando {filtered.length} / {points.length} pontos.</div>
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {filtered.map((p) => (
+            <button key={p.id} className="card p-4 text-left hover:bg-white/10 transition" onClick={() => setSelectedId(p.id)}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-semibold">{p.title}</div>
+                <div className="text-xs muted">{kindLabel(p.kind)}</div>
+              </div>
+              {p.note ? <div className="muted mt-1 text-sm">{p.note}</div> : null}
+            </button>
+          ))}
+          <div className="text-xs muted">Mostrando {filtered.length} / {points.length} pontos.</div>
+        </div>
+      )}
+
+      {selected ? (
+        <div className="card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-xs muted">{selected.id} • {kindLabel(selected.kind)}</div>
+              <div className="text-lg font-semibold mt-1">{selected.title}</div>
+              {selected.address ? <div className="muted mt-1">{selected.address}</div> : null}
+            </div>
+            <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => copyLink(selected.id)}>
+              <span className="accent">{status === "copiado" ? "Link copiado!" : "Copiar link"}</span>
+            </button>
+          </div>
+          {selected.note ? <p className="muted mt-3 whitespace-pre-wrap">{selected.note}</p> : null}
+          {selected.links && selected.links.length ? (
+            <div className="mt-4 grid gap-2">
+              {selected.links.map((l) => (
+                <a key={l.href} className="card px-3 py-2 hover:bg-white/10 transition" href={l.href} target="_blank" rel="noreferrer">
+                  {l.label}
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}

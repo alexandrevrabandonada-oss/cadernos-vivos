@@ -1,0 +1,184 @@
+import Link from "next/link";
+import V2Nav from "@/components/v2/V2Nav";
+import { V2HomeCard } from "@/components/v2/V2HomeCard";
+import { loadCadernoV2 } from "@/lib/v2";
+
+type NodeLite = { id: string; title: string; kind?: string; tags?: string[]; degree: number };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: string[] = [];
+  for (const x of v) if (typeof x === "string") out.push(x);
+  return out.length ? out : undefined;
+}
+
+function pickFirstString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const s = asString(obj[k]);
+    if (s && s.trim()) return s;
+  }
+  return undefined;
+}
+
+function pickFirstArray(obj: Record<string, unknown>, keys: string[]): unknown[] | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (Array.isArray(v)) return v as unknown[];
+  }
+  return undefined;
+}
+
+function titleFromMeta(meta: unknown, fallback: string): string {
+  if (!isRecord(meta)) return fallback;
+  const t = pickFirstString(meta, ["title", "titulo", "name", "nome"]);
+  return t ?? fallback;
+}
+
+function getMapaFromCaderno(c: unknown): unknown {
+  if (!isRecord(c)) return null;
+  return c["mapa"] ?? c["mapaJson"] ?? c["map"] ?? null;
+}
+
+function hotNodesFromMapa(mapa: unknown, limit: number): NodeLite[] {
+  if (!isRecord(mapa)) return [];
+
+  const nodes = pickFirstArray(mapa, ["nodes", "nos", "itens", "items"]);
+  const edges = pickFirstArray(mapa, ["edges", "links", "connections", "conexoes", "rels", "relacoes"]);
+  if (!nodes || !nodes.length) return [];
+
+  const deg = new Map<string, number>();
+  const bump = (id: string) => deg.set(id, (deg.get(id) ?? 0) + 1);
+
+  if (edges && edges.length) {
+    for (const e of edges) {
+      if (!isRecord(e)) continue;
+      const a = pickFirstString(e, ["from", "source", "a", "src", "origem"]);
+      const b = pickFirstString(e, ["to", "target", "b", "dst", "destino"]);
+      if (a) bump(a);
+      if (b) bump(b);
+    }
+  }
+
+  const out: NodeLite[] = [];
+  for (const n of nodes) {
+    if (!isRecord(n)) continue;
+    const id = pickFirstString(n, ["id", "slug", "key"]);
+    if (!id) continue;
+    const title = pickFirstString(n, ["title", "label", "name", "titulo", "nome"]) ?? id;
+    const kind = pickFirstString(n, ["kind", "type", "tipo", "categoria"]);
+    const tags = asStringArray(n["tags"]) ?? asStringArray(n["tag"]);
+    out.push({ id, title, kind, tags, degree: deg.get(id) ?? 0 });
+  }
+
+  out.sort((x, y) => {
+    if (y.degree !== x.degree) return y.degree - x.degree;
+    return x.title.localeCompare(y.title);
+  });
+  return out.slice(0, limit);
+}
+
+export default async function Page(props: { params: { slug: string } | Promise<{ slug: string }> }) {
+  const params = await Promise.resolve(props.params);
+  const slug = params.slug;
+  const c = await loadCadernoV2(slug);
+
+  const meta = isRecord(c) ? c["meta"] : null;
+  const title = titleFromMeta(meta, slug);
+
+  const mapa = getMapaFromCaderno(c);
+  const hot = hotNodesFromMapa(mapa, 6);
+
+  return (
+    <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto" }}>
+      <V2Nav slug={slug} active="home" />
+
+      <header style={{ marginTop: 8, border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, padding: 16, background: "rgba(0,0,0,0.22)" }}>
+        <div style={{ opacity: 0.75, fontSize: 12, letterSpacing: 0.6, textTransform: "uppercase" }}>Cadernos Vivos • V2</div>
+        <h1 style={{ margin: "6px 0 0", fontSize: 26, letterSpacing: 0.2 }}>{title}</h1>
+        <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.4 }}>
+          Universo interativo: mapa, fios de debate, provas e linha do tempo — tudo conectável por hash.
+        </div>
+        <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug} style={{ textDecoration: "underline", opacity: 0.9 }}>Abrir V1</Link>
+          <Link href={"/c/" + slug + "/v2/mapa"} style={{ textDecoration: "underline", opacity: 0.9 }}>Ir para o Mapa</Link>
+        </div>
+      </header>
+
+      <section style={{ marginTop: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+          <V2HomeCard href={"/c/" + slug + "/v2/mapa"} title="Mapa" kicker="Rede viva" desc="Explorar nós e conexões. Foco por hash e painel lateral." />
+          <V2HomeCard href={"/c/" + slug + "/v2/debate"} title="Debate" kicker="Fios" desc="Discussões e análises com continuidade e foco por item." />
+          <V2HomeCard href={"/c/" + slug + "/v2/provas"} title="Provas" kicker="Acervo" desc="Busca local, tags, links e copiar link por item." />
+          <V2HomeCard href={"/c/" + slug + "/v2/linha"} title="Linha" kicker="Derivada" desc="Linha do tempo do caderno, conectada ao mapa." />
+          <V2HomeCard href={"/c/" + slug + "/v2/linha-do-tempo"} title="Linha do tempo" kicker="Visão ampla" desc="Página de linha do tempo (quando existir) com navegação por foco." />
+          <V2HomeCard href={"/c/" + slug + "/v2/trilhas"} title="Trilhas" kicker="Percursos" desc="Percursos guiados (quando existir): do básico ao avançado." />
+        </div>
+      </section>
+
+      <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1.15fr 0.85fr", gap: 12 }}>
+        <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, background: "rgba(0,0,0,0.22)", padding: 16 }}>
+          <div style={{ fontWeight: 900, fontSize: 16 }}>Fios quentes</div>
+          <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.4 }}>
+            Nós mais conectados no mapa (heurística por grau). Use como porta de entrada rápida.
+          </div>
+
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {hot.length ? hot.map((n) => (
+              <Link
+                key={n.id}
+                href={"/c/" + slug + "/v2/mapa#" + n.id}
+                style={{
+                  display: "block",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 14,
+                  padding: 12,
+                  textDecoration: "none",
+                  color: "white",
+                  background: "rgba(255,255,255,0.03)",
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>{n.title}</div>
+                <div style={{ marginTop: 4, opacity: 0.78, fontSize: 13 }}>
+                  {(n.kind ? n.kind + " • " : "") + "conexões: " + String(n.degree)}
+                </div>
+                {n.tags && n.tags.length ? (
+                  <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {n.tags.slice(0, 6).map((t) => (
+                      <span key={t} style={{ fontSize: 12, opacity: 0.85, padding: "3px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>{t}</span>
+                    ))}
+                  </div>
+                ) : null}
+              </Link>
+            )) : (
+              <div style={{ opacity: 0.75, padding: 12, border: "1px dashed rgba(255,255,255,0.18)", borderRadius: 14 }}>
+                Sem mapa (ou sem nós) ainda. Alimente o arquivo mapa.json do caderno.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <aside style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 18, background: "rgba(0,0,0,0.22)", padding: 16 }}>
+          <div style={{ fontWeight: 900, fontSize: 16 }}>Checklist rápido</div>
+          <ul style={{ marginTop: 10, opacity: 0.88, lineHeight: 1.55, paddingLeft: 18 }}>
+            <li>Mapa com nós e conexões</li>
+            <li>Debate com fios e pontos</li>
+            <li>Provas com links e tags</li>
+            <li>Linha do tempo derivada</li>
+            <li>Trilhas (quando houver)</li>
+          </ul>
+          <div style={{ marginTop: 10, opacity: 0.85 }}>
+            Dica: qualquer página V2 aceita foco por hash (quando suportado).
+          </div>
+        </aside>
+      </section>
+    </main>
+  );
+}

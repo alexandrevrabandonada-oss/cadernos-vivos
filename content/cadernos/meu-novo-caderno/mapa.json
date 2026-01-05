@@ -1,0 +1,23 @@
+{
+  "points": [
+    {
+      "id": "centro-vr",
+      "title": "Centro de Volta Redonda (referência geral)",
+      "category": "Referência",
+      "summary": "Ponto de referência para começar o mapa. Ajuste/adicione outros pontos com calma.",
+      "lat": -22.5200,
+      "lng": -44.1040,
+      "links": [
+        { "label": "OSM (VR)", "href": "https://www.openstreetmap.org/search?query=Volta%20Redonda%20RJ" }
+      ]
+    },
+    {
+      "id": "rio-paraiba",
+      "title": "Rio Paraíba do Sul (trecho urbano — referência)",
+      "category": "Água",
+      "summary": "Gancho para risco hídrico e impactos cumulativos.",
+      "lat": -22.5150,
+      "lng": -44.1100
+    }
+  ]
+}

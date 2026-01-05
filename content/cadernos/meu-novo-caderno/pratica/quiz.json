@@ -1,0 +1,6 @@
+[
+  { "q": "Estação mede exposição real de toda a cidade?", "choices": ["Verdadeiro", "Falso"], "answer": 1 },
+  { "q": "A tríade do território é:", "choices": ["Emissão-culpa-punição", "Exposição-vulnerabilidade-proteção", "Calor-sombra-chuva"], "answer": 1 },
+  { "q": "Cuidado público mínimo inclui:", "choices": ["Só discurso", "Dados claros + sombra/água + participação", "Só punição"], "answer": 1 },
+  { "q": "O Caderno Vivo busca:", "choices": ["Vencer debate", "Gerar cuidado e organização", "Provar pessoas"], "answer": 1 }
+]

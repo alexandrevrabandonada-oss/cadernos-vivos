@@ -1,0 +1,101 @@
+"use client";
+
+import { useEffect, useMemo } from "react";
+import { useParams } from "next/navigation";
+
+type Stored = { total: number; current: number; updatedAt: number };
+
+function slugFromParams(p: unknown): string | undefined {
+  if (!p || typeof p !== "object") return;
+  const v = (p as Record<string, unknown>).slug;
+  return typeof v === "string" ? v : undefined;
+}
+
+function keyV1(slug: string) {
+  return `cv:${slug}:aulaProgress:v1`;
+}
+
+function keyAlt(slug: string) {
+  return `cv:${slug}:progress:v1`;
+}
+
+function safeGet(k: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(k: string, v: string) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(k, v);
+  } catch {}
+}
+
+function load(slug: string): Stored | null {
+  const keys = [keyV1(slug), keyAlt(slug)];
+  for (const k of keys) {
+    const raw = safeGet(k);
+    if (!raw) continue;
+    try {
+      const data = JSON.parse(raw) as Partial<Stored>;
+      if (typeof data.current === "number" && typeof data.total === "number") {
+        return {
+          current: data.current,
+          total: data.total,
+          updatedAt: typeof data.updatedAt === "number" ? data.updatedAt : Date.now(),
+        };
+      }
+    } catch {}
+  }
+  return null;
+}
+
+export default function AulaProgress({
+  slug,
+  total,
+  current,
+}: {
+  slug?: string;
+  total: number;
+  current: number;
+}) {
+  const params = useParams();
+  const s = slug ?? slugFromParams(params);
+  const stored = useMemo(() => (s ? load(s) : null), [s]);
+
+  const best = useMemo(() => {
+    const prev = stored?.current ?? 0;
+    const cur = Number.isFinite(current) ? current : 0;
+    return Math.max(prev, cur);
+  }, [stored, current]);
+
+  const pct = useMemo(() => {
+    if (!total || total <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((best / total) * 100)));
+  }, [best, total]);
+
+  useEffect(() => {
+    if (!s) return;
+    const data: Stored = { total, current: best, updatedAt: Date.now() };
+    safeSet(keyV1(s), JSON.stringify(data));
+  }, [s, total, best]);
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs muted">Progresso</div>
+          <div className="text-lg font-semibold mt-1">{best} / {total} aulas</div>
+        </div>
+        <div className="text-sm muted">{pct}%</div>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-2 bg-[var(--accent)]" style={{ width: pct + "%" }} />
+      </div>
+    </div>
+  );
+}

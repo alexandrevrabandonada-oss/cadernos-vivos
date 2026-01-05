@@ -1,0 +1,12 @@
+{
+  "points": [
+    {
+      "notes": "Descreva o porquê do ponto.",
+      "id": "p1",
+      "kind": "referencia",
+      "title": "Ponto 1 (edite)",
+      "lng": -44.1,
+      "lat": -22.52
+    }
+  ]
+}

@@ -1,0 +1,288 @@
+# CV — V2 Tijolo D5 — Linha do Tempo V2 derivada do mapa (v0_2)
+# DIAG → PATCH → VERIFY → REPORT
+$ErrorActionPreference = "Stop"
+
+$repo = Get-Location
+$bootstrap = Join-Path $repo "tools\_bootstrap.ps1"
+if (-not (Test-Path -LiteralPath $bootstrap)) { throw "[STOP] tools/_bootstrap.ps1 não encontrado. Rode o tijolo infra antes." }
+. $bootstrap
+
+Write-Host ("[DIAG] Repo: " + $repo)
+
+# Paths
+$comp = Join-Path $repo "src\components\v2\TimelineV2.tsx"
+$page = Join-Path $repo "src\app\c\[slug]\v2\linha-do-tempo\page.tsx"
+
+# --- DIAG guards
+if (-not (Test-Path -LiteralPath $comp)) { throw ("[STOP] Não achei: " + $comp) }
+if (-not (Test-Path -LiteralPath $page)) { throw ("[STOP] Não achei: " + $page) }
+Write-Host ("[DIAG] TimelineV2: " + $comp)
+Write-Host ("[DIAG] Page:      " + $page)
+
+# --- PATCH: TimelineV2 (deriva itens do mapa: nodes com type=event, data.date/day, etc.)
+# Observação: implementa parse permissivo e ordenação por data; fallback para lista vazia.
+$timelineLines = @(
+'/* eslint-disable react/no-unescaped-entities */',
+'"use client";',
+'',
+'import Link from "next/link";',
+'import { useMemo, useState } from "react";',
+'',
+'type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];',
+'',
+'export type TimelineItem = {',
+'  id: string;',
+'  title: string;',
+'  date: string; // YYYY-MM-DD (preferencial)',
+'  excerpt?: string;',
+'  href?: string;',
+'  tags?: string[];',
+'};',
+'',
+'function asObj(v: unknown): { [k: string]: unknown } | null {',
+'  if (!v || typeof v !== "object") return null;',
+'  return v as { [k: string]: unknown };',
+'}',
+'function asArr(v: unknown): unknown[] {',
+'  return Array.isArray(v) ? v : [];',
+'}',
+'function asStr(v: unknown): string {',
+'  return typeof v === "string" ? v : "";',
+'}',
+'function pickDate(v: unknown): string {',
+'  // aceita data em data.date, data.day, date, day',
+'  const o = asObj(v);',
+'  if (!o) return "";',
+'  const data = asObj(o["data"]);',
+'  const cand = [',
+'    data ? data["date"] : undefined,',
+'    data ? data["day"] : undefined,',
+'    o["date"],',
+'    o["day"],',
+'  ];',
+'  for (const c of cand) {',
+'    const s = asStr(c);',
+'    if (s && /^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return s;',
+'  }',
+'  return "";',
+'}',
+'function safeId(v: unknown, i: number): string {',
+'  const o = asObj(v);',
+'  const id = o ? asStr(o["id"]) : "";',
+'  return id || ("evt-" + String(i));',
+'}',
+'function pickTitle(v: unknown): string {',
+'  const o = asObj(v);',
+'  if (!o) return "";',
+'  const data = asObj(o["data"]);',
+'  const cand = [',
+'    data ? data["title"] : undefined,',
+'    o["title"],',
+'    data ? data["label"] : undefined,',
+'    o["label"],',
+'    data ? data["name"] : undefined,',
+'    o["name"],',
+'  ];',
+'  for (const c of cand) {',
+'    const s = asStr(c);',
+'    if (s) return s;',
+'  }',
+'  return "";',
+'}',
+'function pickExcerpt(v: unknown): string {',
+'  const o = asObj(v);',
+'  if (!o) return "";',
+'  const data = asObj(o["data"]);',
+'  const cand = [',
+'    data ? data["excerpt"] : undefined,',
+'    data ? data["desc"] : undefined,',
+'    data ? data["description"] : undefined,',
+'    o["excerpt"],',
+'    o["desc"],',
+'    o["description"],',
+'  ];',
+'  for (const c of cand) {',
+'    const s = asStr(c);',
+'    if (s) return s;',
+'  }',
+'  return "";',
+'}',
+'function pickTags(v: unknown): string[] {',
+'  const o = asObj(v);',
+'  if (!o) return [];',
+'  const data = asObj(o["data"]);',
+'  const t = data ? data["tags"] : o["tags"];',
+'  const arr = asArr(t);',
+'  const out: string[] = [];',
+'  for (const it of arr) {',
+'    const s = asStr(it);',
+'    if (s) out.push(s);',
+'  }',
+'  return out;',
+'}',
+'function isEventNode(v: unknown): boolean {',
+'  const o = asObj(v);',
+'  if (!o) return false;',
+'  const t = asStr(o["type"]);',
+'  if (t) return t === "event" || t === "evento" || t === "timeline" || t === "milestone";',
+'  const data = asObj(o["data"]);',
+'  const kind = data ? asStr(data["type"]) : "";',
+'  if (kind) return kind === "event" || kind === "evento";',
+'  // fallback: se tem data válida e título, assume evento',
+'  return Boolean(pickDate(v) && pickTitle(v));',
+'}',
+'',
+'export default function TimelineV2(props: { slug: string; title: string; mapa: JsonValue }) {',
+'  const { slug, title, mapa } = props;',
+'  const [copied, setCopied] = useState<string>("");',
+'',
+'  const items = useMemo(() => {',
+'    const root = asObj(mapa) ?? {};',
+'    const nodes = asArr(root["nodes"]);',
+'    const out: TimelineItem[] = [];',
+'',
+'    nodes.forEach((n, i) => {',
+'      if (!isEventNode(n)) return;',
+'      const date = pickDate(n);',
+'      const t = pickTitle(n);',
+'      if (!date || !t) return;',
+'',
+'      const id = safeId(n, i);',
+'      const excerpt = pickExcerpt(n);',
+'      const tags = pickTags(n);',
+'      const href = "/c/" + slug + "/v2/mapa#"+ id;',
+'',
+'      out.push({ id, title: t, date, excerpt: excerpt || undefined, href, tags: tags.length ? tags : undefined });',
+'    });',
+'',
+'    out.sort((a, b) => a.date.localeCompare(b.date));',
+'    return out;',
+'  }, [mapa, slug]);',
+'',
+'  async function copyLink(it: TimelineItem) {',
+'    const hash = "#" + it.id;',
+'    const url = (typeof window !== "undefined" ? window.location.origin : "") + (it.href ? it.href.replace(/#.*$/, "") : ("/c/" + slug + "/v2/mapa")) + hash;',
+'    try {',
+'      await navigator.clipboard.writeText(url);',
+'      setCopied(it.id);',
+'      const el = document.getElementById(it.id);',
+'      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });',
+'      setTimeout(() => setCopied(""), 1200);',
+'    } catch {',
+'      /* noop */',
+'    }',
+'  }',
+'',
+'  return (',
+'    <section style={{ width: "100%", padding: 14, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14 }}>',
+'      <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>',
+'        <div>',
+'          <div style={{ fontSize: 12, opacity: 0.7 }}>Linha do tempo</div>',
+'          <h2 style={{ margin: 0, fontSize: 20 }}>{title}</h2>',
+'        </div>',
+'        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>',
+'          <Link href={"/c/" + slug + "/v2/mapa"} style={{ textDecoration: "underline" }}>Voltar ao Mapa</Link>',
+'          <Link href={"/c/" + slug + "/v2"} style={{ textDecoration: "underline" }}>V2 Home</Link>',
+'        </div>',
+'      </header>',
+'',
+'      <div style={{ marginTop: 12, opacity: 0.75, fontSize: 13 }}>',
+'        Eventos são derivados do mapa (nós com type "event"/"evento" ou data válida).',
+'      </div>',
+'',
+'      {items.length === 0 ? (',
+'        <div style={{ marginTop: 14, padding: 12, opacity: 0.7, borderRadius: 12, border: "1px dashed rgba(255,255,255,0.16)" }}>',
+'          Nenhum evento encontrado no mapa. Dica: no mapa.json, crie nodes com type: "event" e data.date: "YYYY-MM-DD".',
+'        </div>',
+'      ) : (',
+'        <ol style={{ marginTop: 14, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 12 }}>',
+'          {items.map((it) => (',
+'            <li key={it.id} id={it.id} style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)" }}>',
+'              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>',
+'                <div>',
+'                  <div style={{ fontSize: 12, opacity: 0.75 }}>{it.date}</div>',
+'                  <div style={{ fontSize: 16, fontWeight: 700 }}>{it.title}</div>',
+'                </div>',
+'                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>',
+'                  <Link href={it.href || ("/c/" + slug + "/v2/mapa#" + it.id)} style={{ textDecoration: "underline" }}>Abrir no mapa</Link>',
+'                  <button onClick={() => copyLink(it)} style={{ cursor: "pointer", padding: "6px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.16)", background: "transparent", color: "inherit" }}>',
+'                    {copied === it.id ? "Copiado!" : "Copiar link"}',
+'                  </button>',
+'                </div>',
+'              </div>',
+'              {it.excerpt ? (',
+'                <div style={{ marginTop: 8, opacity: 0.85, lineHeight: 1.4 }}>{it.excerpt}</div>',
+'              ) : null}',
+'              {it.tags && it.tags.length ? (',
+'                <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>',
+'                  {it.tags.map((t) => (',
+'                    <span key={t} style={{ fontSize: 12, opacity: 0.8, border: "1px solid rgba(255,255,255,0.12)", padding: "2px 8px", borderRadius: 999 }}>',
+'                      {t}',
+'                    </span>',
+'                  ))}',
+'                </div>',
+'              ) : null}',
+'            </li>',
+'          ))}',
+'        </ol>',
+'      )}',
+'    </section>',
+'  );',
+'}'
+)
+
+$bk1 = BackupFile $comp
+WriteLinesUtf8NoBom $comp $timelineLines
+Write-Host ("[OK] wrote: " + $comp)
+if ($bk1) { Write-Host ("[BK] " + $bk1) }
+
+# --- PATCH: page
+$pageLines = @(
+'import V2Nav from "@/components/v2/V2Nav";',
+'import TimelineV2 from "@/components/v2/TimelineV2";',
+'import { loadCadernoV2 } from "@/lib/v2";',
+'',
+'export default async function Page(props: { params: { slug: string } }) {',
+'  const slug = props.params.slug;',
+'  const c = await loadCadernoV2(slug);',
+'  const title = c.title;',
+'  const mapa = c.mapa;',
+'',
+'  return (',
+'    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto" }}>',
+'      <V2Nav slug={slug} active="linha-do-tempo" />',
+'      <div style={{ marginTop: 12 }}>',
+'        <TimelineV2 slug={slug} title={title} mapa={mapa} />',
+'      </div>',
+'    </main>',
+'  );',
+'}'
+)
+
+$bk2 = BackupFile $page
+WriteLinesUtf8NoBom $page $pageLines
+Write-Host ("[OK] wrote: " + $page)
+if ($bk2) { Write-Host ("[BK] " + $bk2) }
+
+# --- VERIFY
+RunCmd (Join-Path $repo 'tools\cv-verify.ps1') @()
+
+# REPORT
+$report = @"
+# CV — Tijolo D5 v0_2 — Linha do Tempo V2 derivada do mapa
+
+## O que foi entregue
+- TimelineV2: deriva eventos a partir de nodes do mapa (type event/evento ou data válida + título).
+- Ordena por data (YYYY-MM-DD) e cria links para abrir no mapa (#id).
+- Page /v2/linha-do-tempo renderiza V2Nav + TimelineV2 com (slug,title,mapa).
+
+## Arquivos
+- src/components/v2/TimelineV2.tsx
+- src/app/c/[slug]/v2/linha-do-tempo/page.tsx
+
+## Verify
+- tools/cv-verify.ps1 (guard + lint + build)
+"@
+
+WriteReport "cv-v2-tijolo-d5-linha-v2-derivada-do-mapa-v0_2.md" $report | Out-Null
+Write-Host "[OK] D5 v0_2 aplicado e verificado."

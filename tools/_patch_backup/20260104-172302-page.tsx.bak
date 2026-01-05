@@ -1,0 +1,164 @@
+import { notFound } from "next/navigation";
+import type { CSSProperties } from "react";
+import Link from "next/link";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { getCaderno } from "@/lib/cadernos";
+import V2Nav from "@/components/v2/V2Nav";
+import type { Trail, TrailStep } from "@/components/v2/TrilhasV2";
+
+type AccentStyle = CSSProperties & Record<"--accent", string>;
+type AnyObj = Record<string, unknown>;
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function asStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function trailFromUnknown(v: unknown, idx: number): Trail | null {
+  if (!isObj(v)) return null;
+  const id = asStr(v["id"]) || ("trilha-" + String(idx + 1));
+  const summary = asStr(v["summary"]) || asStr(v["desc"]) || "";
+  const rawSteps = v["steps"];
+  const steps: TrailStep[] = Array.isArray(rawSteps)
+    ? rawSteps.map((s, j) => {
+        if (!isObj(s)) return { id: "etapa-" + String(j + 1), title: "Etapa " + String(j + 1) };
+        return {
+          id: asStr(s["id"]) || ("etapa-" + String(j + 1)),
+          title: asStr(s["title"]) || asStr(s["label"]) || ("Etapa " + String(j + 1)),
+          href: asStr(s["href"]) || asStr(s["url"]) || "",
+          kind: asStr(s["kind"]) || asStr(s["type"]) || "",
+        };
+      })
+    : [];
+  return { id, title: id, summary: summary || undefined, steps: steps.length ? steps : undefined };
+}
+
+async function loadTrilhasJson(slug: string): Promise<unknown | null> {
+  try {
+    const p = join(process.cwd(), "content", "cadernos", slug, "trilhas.json");
+    const raw = await readFile(p, "utf8");
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function trailsFromJson(v: unknown): Trail[] {
+  const arr: unknown[] = Array.isArray(v)
+    ? v
+    : isObj(v) && Array.isArray(v["trilhas"])
+      ? (v["trilhas"] as unknown[])
+      : [];
+  const out: Trail[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const t = trailFromUnknown(arr[i], i);
+    if (t && t.id && t.title) out.push(t);
+  }
+  return out;
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string; id: string }> }) {
+  const { slug, id } = await params;
+  const wanted = decodeURIComponent(id);
+
+  let data: Awaited<ReturnType<typeof getCaderno>>;
+  try {
+    data = await getCaderno(slug);
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err && err.code === "ENOENT") return notFound();
+    throw e;
+  }
+  const accent = data.meta?.accent ?? "#F7C600";
+  const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
+
+  const json = await loadTrilhasJson(slug);
+  const trails = trailsFromJson(json);
+  const trail = trails.find((t) => t.id === wanted) ?? null;
+  if (!trail) return notFound();
+
+  const back = "/c/" + slug + "/v2/trilhas";
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
+      <V2Nav slug={slug} active="trilhas" />
+
+      <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Link href={back} style={{ fontSize: 12, fontWeight: 900, textDecoration: "none", opacity: 0.95 }}>
+            ← Voltar para Trilhas
+          </Link>
+          <span style={{ fontSize: 12, opacity: 0.75 }}>id: {trail.id}</span>
+        </div>
+
+        <header
+          style={{
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 14,
+            padding: 12,
+            background: "rgba(0,0,0,0.22)",
+            display: "grid",
+            gap: 6,
+          }}
+        >
+          <div style={{ fontSize: 12, opacity: 0.75 }}>Trilha</div>
+          <div style={{ fontSize: 18, fontWeight: 950 }}>{trail.title}</div>
+          {trail.summary ? <div style={{ fontSize: 13, lineHeight: 1.55, opacity: 0.95 }}>{trail.summary}</div> : null}
+        </header>
+
+        <section
+          style={{
+            borderRadius: 14,
+            padding: 12,
+            border: "1px solid rgba(255,255,255,0.10)",
+            background: "rgba(0,0,0,0.18)",
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 900 }}>Etapas</div>
+          {Array.isArray(trail.steps) && trail.steps.length ? (
+            <ol style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 8 }}>
+              {(Array.isArray(trail.steps) ? (trail.steps as unknown[]) : []).map((st, idx) => {
+                                const stepObj: Record<string, unknown> =
+                  (typeof st === "string" || typeof st === "number" || typeof st === "boolean")
+                    ? { title: String(st) }
+                    : ((st as unknown as Record<string, unknown>) || {});
+                const stepId = (typeof stepObj["id"] === "string" && stepObj["id"]) ? String(stepObj["id"]) : "etapa";
+                const label =
+                  ((typeof stepObj["title"] === "string" && stepObj["title"]) ? String(stepObj["title"]) : "") ||
+                  ((typeof stepObj["label"] === "string" && stepObj["label"]) ? String(stepObj["label"]) : "") ||
+                  ("Etapa " + String(idx + 1));
+                                const href = (typeof stepObj["href"] === "string" ? String(stepObj["href"]) : (typeof stepObj["url"] === "string" ? String(stepObj["url"]) : "")) || "";
+                return (
+                  <li key={(stepId + "-" + String(idx))} style={{ lineHeight: 1.45 }}>
+                    {href ? (
+                      <a href={href} style={{ color: "var(--accent)", fontWeight: 900, textDecoration: "none" }}>
+                        {label}
+                      </a>
+                    ) : (
+                      <span style={{ fontWeight: 800 }}>{label}</span>
+                    )}
+                    {st.kind ? <span style={{ marginLeft: 8, fontSize: 12, opacity: 0.75 }}>({st.kind})</span> : null}
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <div style={{ fontSize: 13, opacity: 0.9 }}>
+              Esta trilha ainda nao tem steps. Edite trilhas.json e adicione um array steps.
+            </div>
+          )}
+        </section>
+
+        <div style={{ fontSize: 12, opacity: 0.85 }}>
+          Dica: steps podem apontar para V2 (mapa, debate, provas, linha do tempo) usando href.
+        </div>
+      </div>
+    </main>
+  );
+}

@@ -1,0 +1,26 @@
+import Link from "next/link";
+import V2Nav from "@/components/v2/V2Nav";
+import { loadCadernoV2 } from "@/lib/v2";
+import MapaV2 from "@/components/v2/MapaV2";
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const caderno = await loadCadernoV2(slug);
+  const title = caderno?.meta?.title || slug;
+  const mapa = caderno?.mapa ?? null;
+
+  return (
+    <main style={{ padding: 18 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 20 }}>Mapa — {title}</h1>
+          <p style={{ margin: "6px 0 0 0", opacity: 0.7 }}>Canvas + painel + dock (V2 Concreto Zen).</p>
+        </div>
+        <Link href={"/c/" + slug + "/v2"} style={{ textDecoration: "underline", color: "inherit", opacity: 0.85 }}>Voltar</Link>
+      </header>
+
+      <V2Nav slug={slug} active="mapa" />
+      <MapaV2 slug={slug} mapa={mapa} />
+    </main>
+  );
+}

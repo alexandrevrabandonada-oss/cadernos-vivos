@@ -1,0 +1,235 @@
+import Link from "next/link";
+import type { CSSProperties } from "react";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+type AnyObj = Record<string, unknown>;
+
+export type TrailStep = string | Record<string, unknown>;
+export type Trail = {
+  id?: string;
+  title?: string;
+  desc?: string;
+  steps?: TrailStep[];
+  tags?: string[];
+  kind?: string;
+};
+
+type TrailItem = {
+  title?: string;
+  desc?: string;
+  steps?: string[];
+  tags?: string[];
+  kind?: string;
+};
+type Kanban = { today?: TrailItem[]; week?: TrailItem[]; month?: TrailItem[] };
+
+async function readOptional(fp: string): Promise<string | null> {
+  try { return await fs.readFile(fp, "utf8"); } catch { return null; }
+}
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function s(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return "";
+}
+
+function arrStr(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.map((x) => s(x)).filter(Boolean);
+  return out.length ? out : undefined;
+}
+
+function normalizeItem(v: unknown): TrailItem {
+  if (!isObj(v)) return { title: s(v) || "Trilha" };
+  const o = v as AnyObj;
+  return {
+    title: s(o["title"]) || s(o["name"]) || s(o["id"]) || "Trilha",
+    desc: s(o["desc"]) || s(o["description"]) || s(o["body"]) || s(o["text"]) || "",
+    steps: arrStr(o["steps"]) || arrStr(o["tasks"]) || arrStr(o["items"]),
+    tags: arrStr(o["tags"]),
+    kind: s(o["kind"]) || s(o["type"]),
+  };
+}
+
+function pickArray(parsed: unknown): unknown[] | null {
+  if (!parsed) return null;
+  if (Array.isArray(parsed)) return parsed;
+  if (isObj(parsed)) {
+    const o = parsed as AnyObj;
+    const a1 = o["items"]; if (Array.isArray(a1)) return a1;
+    const a2 = o["trilhas"]; if (Array.isArray(a2)) return a2;
+    const a3 = o["trails"]; if (Array.isArray(a3)) return a3;
+  }
+  return null;
+}
+
+function pickKanban(parsed: unknown): Kanban | null {
+  if (!isObj(parsed)) return null;
+  const o = parsed as AnyObj;
+  const kb = o["kanban"];
+  const root = isObj(kb) ? (kb as AnyObj) : o;
+  const today = root["today"];
+  const week = root["week"];
+  const month = root["month"];
+  const out: Kanban = {};
+  if (Array.isArray(today)) out.today = today.map(normalizeItem);
+  if (Array.isArray(week)) out.week = week.map(normalizeItem);
+  if (Array.isArray(month)) out.month = month.map(normalizeItem);
+  const hasAny = !!(out.today?.length || out.week?.length || out.month?.length);
+  return hasAny ? out : null;
+}
+
+const card: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 14,
+  padding: 14,
+  background: "rgba(0,0,0,0.22)",
+};
+
+const btn: CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,0.14)",
+  textDecoration: "none",
+  color: "inherit",
+  background: "rgba(255,255,255,0.06)",
+  fontSize: 12,
+};
+
+function trailCard(it: TrailItem, idx: number): JSX.Element {
+  const title = it.title || ("Trilha " + String(idx + 1));
+  const steps = it.steps || [];
+  return (
+    <div key={title + "-" + String(idx)} style={{ padding: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.18)" }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+        <div style={{ fontSize: 14, fontWeight: 850 }}>{title}</div>
+        {it.kind ? <div style={{ fontSize: 11, opacity: 0.75 }}>({it.kind})</div> : null}
+        {steps.length ? <div style={{ fontSize: 11, opacity: 0.75 }}>{steps.length} passos</div> : null}
+      </div>
+      {it.desc ? <div style={{ marginTop: 8, fontSize: 13, opacity: 0.86, whiteSpace: "pre-wrap" }}>{it.desc}</div> : null}
+      {it.tags && it.tags.length ? (
+        <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {it.tags.map((t) => (
+            <span key={t} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)", opacity: 0.8 }}>{t}</span>
+          ))}
+        </div>
+      ) : null}
+      {steps.length ? (
+        <ol style={{ marginTop: 10, paddingLeft: 18, opacity: 0.92, fontSize: 13, lineHeight: 1.6 }}>
+          {steps.map((st, sidx) => <li key={String(sidx)} style={{ marginTop: 4 }}>{st}</li>)}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
+export default async function TrilhasV2(props: { slug: string; title?: string }) {
+  const { slug } = props;
+  const root = path.join(process.cwd(), "content", "cadernos", slug);
+
+  const md =
+    (await readOptional(path.join(root, "trilhas.md"))) ||
+    (await readOptional(path.join(root, "trilhas.mdx"))) ||
+    (await readOptional(path.join(root, "trilhas.txt"))) ||
+    (await readOptional(path.join(root, "trails.md"))) ||
+    (await readOptional(path.join(root, "kanban.md")));
+
+  const rawJson =
+    (await readOptional(path.join(root, "trilhas.json"))) ||
+    (await readOptional(path.join(root, "trails.json"))) ||
+    (await readOptional(path.join(root, "kanban.json")));
+
+  let items: TrailItem[] = [];
+  let kanban: Kanban | null = null;
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson) as unknown;
+      const arr = pickArray(parsed);
+      if (arr) items = arr.map(normalizeItem);
+      kanban = pickKanban(parsed);
+    } catch {
+      items = [];
+      kanban = null;
+    }
+  }
+
+  const wrap: CSSProperties = { marginTop: 12, display: "grid", gap: 12 };
+  const small: CSSProperties = { fontSize: 12, opacity: 0.78 };
+  const h2: CSSProperties = { fontSize: 18, fontWeight: 900, letterSpacing: "-0.2px", marginTop: 2 };
+
+  return (
+    <section aria-label="Trilhas V2" style={wrap}>
+      <div style={card}>
+        <div style={{ fontSize: 12, opacity: 0.75 }}>Concreto Zen • Trilhas</div>
+        <div style={{ fontSize: 22, fontWeight: 950, letterSpacing: "-0.4px", marginTop: 6 }}>Trilhas práticas</div>
+        <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>
+          Aqui entram roteiros (passo a passo), missões e tarefas do caderno. JSON vira cards; MD vira texto-base.
+        </div>
+        <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug + "/v2"} style={btn}>Voltar pro Hub V2</Link>
+          <Link href={"/c/" + slug} style={{ ...btn, background: "rgba(0,0,0,0.18)" }}>Abrir V1</Link>
+        </div>
+      </div>
+
+      {md ? (
+        <article style={card}>
+          <div style={small}>Fonte: trilhas.md / kanban.md</div>
+          <div style={h2}>Texto-base</div>
+          <pre style={{ marginTop: 12, whiteSpace: "pre-wrap", lineHeight: 1.55, fontSize: 13, opacity: 0.92 }}>{md}</pre>
+        </article>
+      ) : null}
+
+      {(!md && kanban) ? (
+        <article style={card}>
+          <div style={small}>Fonte: kanban.json / trilhas.json</div>
+          <div style={h2}>Kanban</div>
+          <div style={{ marginTop: 12, display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+            <div>
+              <div style={{ fontSize: 12, opacity: 0.78, marginBottom: 8 }}>Hoje</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {(kanban.today && kanban.today.length) ? kanban.today.map((it, idx) => trailCard(it, idx)) : <div style={{ opacity: 0.7, fontSize: 13 }}>vazio</div>}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, opacity: 0.78, marginBottom: 8 }}>Essa semana</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {(kanban.week && kanban.week.length) ? kanban.week.map((it, idx) => trailCard(it, idx)) : <div style={{ opacity: 0.7, fontSize: 13 }}>vazio</div>}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, opacity: 0.78, marginBottom: 8 }}>Esse mês</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {(kanban.month && kanban.month.length) ? kanban.month.map((it, idx) => trailCard(it, idx)) : <div style={{ opacity: 0.7, fontSize: 13 }}>vazio</div>}
+              </div>
+            </div>
+          </div>
+        </article>
+      ) : null}
+
+      {(!md && !kanban && items.length) ? (
+        <article style={card}>
+          <div style={small}>Fonte: trilhas.json</div>
+          <div style={h2}>Trilhas</div>
+          <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+            {items.map((it, idx) => trailCard(it, idx))}
+          </div>
+        </article>
+      ) : null}
+
+      {(!md && !kanban && items.length === 0) ? (
+        <div style={card}>
+          <div style={h2}>Ainda vazio</div>
+          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.82 }}>
+            Crie <code>{"content/cadernos/" + slug + "/trilhas.json"}</code> (ou <code>kanban.json</code>) para alimentar esta tela.
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}

@@ -1,0 +1,91 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+
+type Saved = { done: number[] };
+
+function inferSlugFromPath(pathname: string): string {
+  const parts = pathname.split("/").filter(Boolean);
+  const i = parts.indexOf("c");
+  if (i >= 0 && parts.length > i + 1) return parts[i + 1] || "";
+  return "";
+}
+
+function keyFor(slug: string) {
+  return "cv:" + slug + ":aulas:v1";
+}
+
+function safeLoad(k: string): Saved {
+  if (typeof window === "undefined") return { done: [] };
+  try {
+    const raw = window.localStorage.getItem(k);
+    if (!raw) return { done: [] };
+    const data = JSON.parse(raw) as Partial<Saved>;
+    return { done: Array.isArray(data.done) ? (data.done as number[]) : [] };
+  } catch {
+    return { done: [] };
+  }
+}
+
+function safeSave(k: string, data: Saved) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(k, JSON.stringify(data)); } catch {}
+}
+
+export default function AulaProgress({
+  slug,
+  total,
+  current,
+}: {
+  slug?: string;
+  total: number;
+  current: number;
+}) {
+  const pathname = usePathname();
+  const inferred = useMemo(() => (slug && slug.length ? slug : inferSlugFromPath(pathname)), [slug, pathname]);
+  const storageKey = useMemo(() => (inferred ? keyFor(inferred) : ""), [inferred]);
+  const init = useMemo(() => (storageKey ? safeLoad(storageKey) : { done: [] }), [storageKey]);
+
+  const [done, setDone] = useState<number[]>(init.done);
+
+  const pct = useMemo(() => {
+    const d = Math.min(Math.max(done.length, 0), total);
+    return total ? Math.round((d / total) * 100) : 0;
+  }, [done, total]);
+
+  const markDone = () => {
+    if (!storageKey) return;
+    const n = current;
+    const next = Array.from(new Set([...(done || []), n])).sort((a, b) => a - b);
+    setDone(next);
+    safeSave(storageKey, { done: next });
+  };
+
+  const clear = () => {
+    if (!storageKey) return;
+    setDone([]);
+    safeSave(storageKey, { done: [] });
+  };
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs muted">Progresso</div>
+          <div className="text-sm font-semibold mt-1">{pct}% concluido</div>
+        </div>
+        <div className="flex gap-2">
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={markDone}>
+            <span className="accent">Marcar aula {String(current)} como feita</span>
+          </button>
+          <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={clear}>Limpar</button>
+        </div>
+      </div>
+      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-black/30 border border-white/10">
+        <div className="h-full bg-white/20" style={{ width: pct + "%" }} />
+      </div>
+      <div className="mt-2 text-xs muted">Feito: {String(done.length)} / {String(total)}</div>
+    </div>
+  );
+}

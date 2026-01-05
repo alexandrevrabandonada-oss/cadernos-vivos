@@ -1,0 +1,11 @@
+import type { ReactNode } from "react";
+
+type LayoutProps = {
+  children: ReactNode;
+  params: Promise<{ slug: string }>; // Next 16: params pode ser Promise
+};
+
+export default async function Layout({ children }: LayoutProps) {
+  // Universo do caderno: o visual base fica aqui (sem acoplar em conteúdo).
+  return <UniverseShell>{children}</UniverseShell>;
+}

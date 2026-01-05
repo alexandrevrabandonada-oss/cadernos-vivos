@@ -1,0 +1,518 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+
+export type MapPointKind =
+  | "ponto-critico"
+  | "mutirao"
+  | "instituicao"
+  | "ponto-eco"
+  | "outro";
+
+export type MapPoint = {
+  id: string;
+  title: string;
+  lat: number;
+  lng: number;
+  kind: MapPointKind;
+  address?: string;
+  notes?: string;
+};
+
+type LocalPointState = {
+  seen?: boolean;
+  evidence?: string;
+};
+
+type CallKind = "chamado" | "mutirao";
+
+type LocalCall = {
+  id: string;
+  pointId: string;
+  kind: CallKind;
+  title: string;
+  pedido: string;
+  ajuda: string;
+  when?: string;
+  where?: string;
+  createdAt: number;
+  done?: boolean;
+};
+
+function isBrowser() {
+  return typeof window !== "undefined";
+}
+
+function safeRead<T>(key: string, fallback: T): T {
+  if (!isBrowser()) return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeWrite<T>(key: string, value: T) {
+  if (!isBrowser()) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function useSlug(explicit?: string) {
+  const params = useParams() as Record<string, string | string[] | undefined>;
+  const raw = explicit ?? params["slug"];
+  if (!raw) return "";
+  return Array.isArray(raw) ? (raw[0] || "") : raw;
+}
+
+function uid() {
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+function kindLabel(k: MapPointKind) {
+  if (k === "ponto-critico") return "Ponto crítico";
+  if (k === "mutirao") return "Mutirão";
+  if (k === "instituicao") return "Instituição";
+  if (k === "ponto-eco") return "Ponto ECO";
+  return "Outro";
+}
+
+function googleMapsLink(lat: number, lng: number) {
+  const q = encodeURIComponent(lat.toFixed(6) + "," + lng.toFixed(6));
+  return "https://www.google.com/maps?q=" + q;
+}
+
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function fmtDate(ts: number) {
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return String(ts);
+  }
+}
+
+function buildMessage(args: {
+  slug: string;
+  point: MapPoint;
+  call: LocalCall;
+}) {
+  const s = args.slug || "caderno";
+  const p = args.point;
+  const c = args.call;
+  const lines: string[] = [];
+  lines.push("CADERNOS VIVOS — " + s.toUpperCase());
+  lines.push("");
+  lines.push((c.kind === "mutirao" ? "MUTIRAO" : "CHAMADO") + ": " + c.title);
+  lines.push("Local: " + p.title + " (" + p.lat.toFixed(5) + ", " + p.lng.toFixed(5) + ")");
+  lines.push("Categoria: " + kindLabel(p.kind));
+  if (p.address) lines.push("Endereco: " + p.address);
+  lines.push("");
+  lines.push("Pedido concreto: " + c.pedido);
+  lines.push("Acao de ajuda mutua: " + c.ajuda);
+  if (c.when) lines.push("Quando: " + c.when);
+  if (c.where) lines.push("Onde: " + c.where);
+  lines.push("");
+  lines.push("Mapa: /c/" + s + "/mapa");
+  lines.push("Abrir no Google Maps: " + googleMapsLink(p.lat, p.lng));
+  return lines.join("\\n");
+}
+
+export default function TerritoryMap(props: {
+  points: MapPoint[];
+  slug?: string;
+}) {
+  const slug = useSlug(props.slug);
+  const kPoints = "cv:" + (slug || "caderno") + ":map:points:v1";
+  const kCalls = "cv:" + (slug || "caderno") + ":map:calls:v1";
+
+  const [filterKind, setFilterKind] = useState<MapPointKind | "">("");
+  const [selectedId, setSelectedId] = useState<string>(props.points[0]?.id || "");
+
+  const [localPoints, setLocalPoints] = useState<Record<string, LocalPointState>>(() =>
+    safeRead<Record<string, LocalPointState>>(kPoints, {})
+  );
+
+  const [calls, setCalls] = useState<LocalCall[]>(() =>
+    safeRead<LocalCall[]>(kCalls, [])
+  );
+
+  const points = useMemo(() => {
+    const base = props.points || [];
+    if (!filterKind) return base;
+    return base.filter((p) => p.kind === filterKind);
+  }, [props.points, filterKind]);
+
+  const selected = useMemo(() => {
+    const p = (props.points || []).find((x) => x.id === selectedId);
+    return p || (props.points || [])[0] || null;
+  }, [props.points, selectedId]);
+
+  const bounds = useMemo(() => {
+    const all = props.points || [];
+    if (all.length === 0) return null;
+    let minLat = all[0].lat, maxLat = all[0].lat, minLng = all[0].lng, maxLng = all[0].lng;
+    for (const p of all) {
+      minLat = Math.min(minLat, p.lat);
+      maxLat = Math.max(maxLat, p.lat);
+      minLng = Math.min(minLng, p.lng);
+      maxLng = Math.max(maxLng, p.lng);
+    }
+    // evita divisao por zero
+    if (minLat === maxLat) { minLat -= 0.0001; maxLat += 0.0001; }
+    if (minLng === maxLng) { minLng -= 0.0001; maxLng += 0.0001; }
+    return { minLat, maxLat, minLng, maxLng };
+  }, [props.points]);
+
+  function toXY(p: MapPoint) {
+    if (!bounds) return { x: 500, y: 300 };
+    const x = (p.lng - bounds.minLng) / (bounds.maxLng - bounds.minLng);
+    const y = 1 - (p.lat - bounds.minLat) / (bounds.maxLat - bounds.minLat);
+    return { x: clamp(x, 0, 1) * 1000, y: clamp(y, 0, 1) * 600 };
+  }
+
+  function persistPoints(next: Record<string, LocalPointState>) {
+    setLocalPoints(next);
+    safeWrite(kPoints, next);
+  }
+
+  function persistCalls(next: LocalCall[]) {
+    setCalls(next);
+    safeWrite(kCalls, next);
+  }
+
+  const [draftKind, setDraftKind] = useState<CallKind>("chamado");
+  const [draftTitle, setDraftTitle] = useState<string>("");
+  const [draftPedido, setDraftPedido] = useState<string>("");
+  const [draftAjuda, setDraftAjuda] = useState<string>("");
+  const [draftWhen, setDraftWhen] = useState<string>("");
+  const [draftWhere, setDraftWhere] = useState<string>("");
+  const [status, setStatus] = useState<"" | "salvo" | "copiado">("");
+
+  function primeDraftFromPoint(p: MapPoint) {
+    const base = (draftKind === "mutirao" ? "Mutirao" : "Chamado") + " — " + p.title;
+    if (!draftTitle) setDraftTitle(base);
+  }
+
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("copiado");
+      setTimeout(() => setStatus(""), 1200);
+    } catch {}
+  }
+
+  function addCall(point: MapPoint) {
+    const pedido = draftPedido.trim();
+    const ajuda = draftAjuda.trim();
+    const title = (draftTitle || (draftKind === "mutirao" ? "Mutirao" : "Chamado") + " — " + point.title).trim();
+    if (!pedido || !ajuda || !title) {
+      setStatus("");
+      return;
+    }
+    const call: LocalCall = {
+      id: uid(),
+      pointId: point.id,
+      kind: draftKind,
+      title,
+      pedido,
+      ajuda,
+      when: draftWhen.trim() || undefined,
+      where: draftWhere.trim() || undefined,
+      createdAt: Date.now(),
+      done: false,
+    };
+    const next = [call, ...calls];
+    persistCalls(next);
+    setStatus("salvo");
+    setTimeout(() => setStatus(""), 1200);
+  }
+
+  function toggleSeen(pointId: string) {
+    const cur = localPoints[pointId] || {};
+    const next: Record<string, LocalPointState> = { ...localPoints, [pointId]: { ...cur, seen: !cur.seen } };
+    persistPoints(next);
+  }
+
+  function saveEvidence(pointId: string, evidence: string) {
+    const cur = localPoints[pointId] || {};
+    const next: Record<string, LocalPointState> = { ...localPoints, [pointId]: { ...cur, evidence } };
+    persistPoints(next);
+    setStatus("salvo");
+    setTimeout(() => setStatus(""), 1200);
+  }
+
+  function markDone(callId: string, done: boolean) {
+    const next = calls.map((c) => (c.id === callId ? { ...c, done } : c));
+    persistCalls(next);
+  }
+
+  function removeCall(callId: string) {
+    const next = calls.filter((c) => c.id !== callId);
+    persistCalls(next);
+  }
+
+  const activeCalls = useMemo(() => calls.filter((c) => !c.done), [calls]);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
+      <section className="card p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">Mapa do território</h2>
+            <p className="muted mt-2">Ponto crítico vira organização: ver, registrar, pedir, agir.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-sm muted">Filtrar:</div>
+            <select
+              className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+              value={filterKind}
+              onChange={(e) => setFilterKind((e.target.value as MapPointKind) || "")}
+            >
+              <option value="">Tudo</option>
+              <option value="ponto-critico">Ponto critico</option>
+              <option value="mutirao">Mutirao</option>
+              <option value="instituicao">Instituicao</option>
+              <option value="ponto-eco">Ponto ECO</option>
+              <option value="outro">Outro</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/10 p-3">
+          <svg viewBox="0 0 1000 600" className="w-full h-[360px]">
+            <rect x="0" y="0" width="1000" height="600" fill="transparent" />
+            {bounds && (props.points || []).map((p) => {
+              if (filterKind && p.kind !== filterKind) return null;
+              const xy = toXY(p);
+              const isSel = selected && selected.id === p.id;
+              const seen = !!localPoints[p.id]?.seen;
+              const r = isSel ? 10 : 7;
+              return (
+                <g key={p.id} onClick={() => { setSelectedId(p.id); primeDraftFromPoint(p); }} style={{ cursor: "pointer" }}>
+                  <circle cx={xy.x} cy={xy.y} r={r} fill="currentColor" opacity={seen ? 0.95 : 0.65} />
+                  {isSel ? <circle cx={xy.x} cy={xy.y} r={r + 8} fill="none" stroke="currentColor" opacity={0.35} strokeWidth={2} /> : null}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+
+        <div className="mt-4">
+          <div className="text-sm muted">Pontos ({String(points.length)})</div>
+          <div className="mt-2 grid gap-2">
+            {points.map((p) => {
+              const isSel = selected && selected.id === p.id;
+              const seen = !!localPoints[p.id]?.seen;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => { setSelectedId(p.id); primeDraftFromPoint(p); }}
+                  className="card px-3 py-3 text-left hover:bg-white/5 transition"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-semibold">{p.title}</div>
+                    <div className="text-xs muted">{kindLabel(p.kind)}{seen ? " • confirmado" : ""}</div>
+                  </div>
+                  {p.address ? <div className="text-sm muted mt-1">{p.address}</div> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="card p-5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold">Chamados ativos</h3>
+            <div className="text-xs muted">{String(activeCalls.length)}</div>
+          </div>
+          <p className="muted mt-2">Tudo fica salvo no seu aparelho. Copie e jogue no WhatsApp.</p>
+          <div className="mt-3 grid gap-2">
+            {activeCalls.length === 0 ? (
+              <div className="text-sm muted">Nenhum chamado ainda.</div>
+            ) : (
+              activeCalls.slice(0, 6).map((c) => {
+                const p = (props.points || []).find((x) => x.id === c.pointId);
+                return (
+                  <div key={c.id} className="rounded-2xl border border-white/10 bg-black/10 p-3">
+                    <div className="text-xs muted">{c.kind === "mutirao" ? "MUTIRAO" : "CHAMADO"} • {fmtDate(c.createdAt)}</div>
+                    <div className="font-semibold mt-1">{c.title}</div>
+                    <div className="text-sm muted mt-1">{p ? p.title : "Ponto"} • {p ? kindLabel(p.kind) : ""}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => { if (!p) return; copyText(buildMessage({ slug: slug || "caderno", point: p, call: c })); }}>
+                        <span className="accent">Copiar texto</span>
+                      </button>
+                      <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => markDone(c.id, true)}>
+                        Concluir
+                      </button>
+                      <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => removeCall(c.id)}>
+                        Apagar
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="mt-3">
+            <button
+              className="card px-3 py-2 hover:bg-white/10 transition text-sm"
+              onClick={() => copyText(JSON.stringify({ slug: slug || "caderno", calls }, null, 2))}
+            >
+              <span className="accent">{status === "copiado" ? "Copiado!" : "Copiar JSON"}</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="card p-5">
+          <h3 className="text-lg font-semibold">Ponto selecionado</h3>
+          {!selected ? (
+            <div className="muted mt-2">Sem pontos no mapa.</div>
+          ) : (
+            <div className="mt-3 space-y-4">
+              <div>
+                <div className="text-xs muted">{selected.id}</div>
+                <div className="text-xl font-semibold mt-1">{selected.title}</div>
+                <div className="muted mt-1">{kindLabel(selected.kind)} • {selected.lat.toFixed(6)}, {selected.lng.toFixed(6)}</div>
+                {selected.address ? <div className="text-sm muted mt-1">{selected.address}</div> : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <a className="card px-3 py-2 hover:bg-white/10 transition text-sm" href={googleMapsLink(selected.lat, selected.lng)} target="_blank" rel="noreferrer">
+                    <span className="accent">Abrir no Maps</span>
+                  </a>
+                  <button className="card px-3 py-2 hover:bg-white/10 transition text-sm" onClick={() => toggleSeen(selected.id)}>
+                    {localPoints[selected.id]?.seen ? "Confirmado (remover)" : "Eu vi tambem"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+                <div className="font-semibold">Evidencia leve</div>
+                <div className="text-sm muted mt-1">Link, frase curta, referencia. Sem textao.</div>
+                <textarea
+                  className="mt-3 w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+                  rows={3}
+                  value={localPoints[selected.id]?.evidence || ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const cur = localPoints[selected.id] || {};
+                    setLocalPoints({ ...localPoints, [selected.id]: { ...cur, evidence: v } });
+                  }}
+                  placeholder="Ex: foto do local (link), data, observacao objetiva..."
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button className="card px-3 py-2 hover:bg-white/10 transition text-sm" onClick={() => saveEvidence(selected.id, (localPoints[selected.id]?.evidence || "").slice(0, 600))}>
+                    <span className="accent">{status === "salvo" ? "Salvo!" : "Salvar evidencia"}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
+                <div className="font-semibold">Chamado / Mutirao (30s)</div>
+                <div className="grid gap-3 mt-3">
+                  <div className="grid gap-2">
+                    <div className="text-sm muted">Tipo</div>
+                    <select
+                      className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-white/20"
+                      value={draftKind}
+                      onChange={(e) => setDraftKind((e.target.value as CallKind) || "chamado")}
+                    >
+                      <option value="chamado">Chamado</option>
+                      <option value="mutirao">Mutirao</option>
+                    </select>
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="text-sm muted">Titulo</div>
+                    <input
+                      className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/20"
+                      value={draftTitle}
+                      onChange={(e) => setDraftTitle(e.target.value)}
+                      placeholder={(draftKind === "mutirao" ? "Mutirao" : "Chamado") + " — " + selected.title}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="text-sm muted">Pedido concreto</div>
+                    <textarea
+                      className="w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+                      rows={3}
+                      value={draftPedido}
+                      onChange={(e) => setDraftPedido(e.target.value)}
+                      placeholder="O que deve acontecer, por quem, e quando?"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="text-sm muted">Acao simples de ajuda mutua</div>
+                    <textarea
+                      className="w-full rounded-xl border border-white/10 bg-black/20 p-3 outline-none focus:border-white/20"
+                      rows={3}
+                      value={draftAjuda}
+                      onChange={(e) => setDraftAjuda(e.target.value)}
+                      placeholder="Algo pratico (2 a 10 min) que qualquer pessoa consiga fazer."
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <div className="text-sm muted">Quando (opcional)</div>
+                      <input
+                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/20"
+                        value={draftWhen}
+                        onChange={(e) => setDraftWhen(e.target.value)}
+                        placeholder="Ex: Sab 10h (05/01)"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <div className="text-sm muted">Onde (opcional)</div>
+                      <input
+                        className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 outline-none focus:border-white/20"
+                        value={draftWhere}
+                        onChange={(e) => setDraftWhere(e.target.value)}
+                        placeholder="Ponto de encontro / referencia"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button className="card px-3 py-2 hover:bg-white/10 transition" onClick={() => addCall(selected)}>
+                    <span className="accent">{status === "salvo" ? "Salvo!" : "Salvar"}</span>
+                  </button>
+                  <button
+                    className="card px-3 py-2 hover:bg-white/10 transition"
+                    onClick={() => {
+                      const pedido = draftPedido.trim();
+                      const ajuda = draftAjuda.trim();
+                      const title = (draftTitle || (draftKind === "mutirao" ? "Mutirao" : "Chamado") + " — " + selected.title).trim();
+                      if (!pedido || !ajuda || !title) return;
+                      const tmp: LocalCall = {
+                        id: "tmp",
+                        pointId: selected.id,
+                        kind: draftKind,
+                        title,
+                        pedido,
+                        ajuda,
+                        when: draftWhen.trim() || undefined,
+                        where: draftWhere.trim() || undefined,
+                        createdAt: Date.now(),
+                        done: false,
+                      };
+                      copyText(buildMessage({ slug: slug || "caderno", point: selected, call: tmp }));
+                    }}
+                  >
+                    <span className="accent">{status === "copiado" ? "Copiado!" : "Copiar texto"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      </aside>
+    </div>
+  );
+}

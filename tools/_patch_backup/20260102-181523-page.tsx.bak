@@ -1,0 +1,43 @@
+import { notFound } from "next/navigation";
+import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
+import { V2Nav } from "@/components/v2/V2Nav";
+import { DebateV2, type DebatePrompt } from "@/components/v2/DebateV2";
+
+type AccentStyle = CSSProperties & Record<"--accent", string>;
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let data: Awaited<ReturnType<typeof getCaderno>>;
+  try {
+    data = await getCaderno(slug);
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err && err.code === "ENOENT") return notFound();
+    throw e;
+  }
+
+  const title = data.meta?.title ?? slug;
+  const accent = data.meta?.accent ?? "#F7C600";
+  const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
+
+  const prompts: DebatePrompt[] = data.debate && data.debate.length
+    ? (data.debate as DebatePrompt[])
+    : [
+        { id: "impacto", title: "Impacto", prompt: "Qual é o choque aqui? Em uma frase: o que está acontecendo e por que é urgente?" },
+        { id: "contexto", title: "Contexto", prompt: "O que precisa ser entendido do território, da história e da rotina para não cair no moralismo?" },
+        { id: "critica", title: "Crítica estrutural", prompt: "Qual é a engrenagem (poder, dinheiro, burocracia, silêncio) que mantém isso funcionando assim?" },
+        { id: "humanizacao", title: "Humanização", prompt: "Quem carrega o custo? Traga gente real: trabalho, saúde, tempo, medo, esperança." },
+        { id: "convocacao", title: "Convocação", prompt: "Qual é o próximo passo prático? O que dá pra fazer junto (apoio mútuo, organização, prova, continuidade)?" },
+      ];
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
+      <V2Nav slug={slug} active="debate" />
+      <div style={{ marginTop: 12 }}>
+        <DebateV2 slug={slug} title={title} prompts={prompts} />
+      </div>
+    </main>
+  );
+}

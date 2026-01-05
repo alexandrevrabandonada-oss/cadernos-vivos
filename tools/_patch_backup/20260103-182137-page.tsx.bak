@@ -1,0 +1,45 @@
+import V2Nav from "@/components/v2/V2Nav";
+import TimelineV2 from "@/components/v2/TimelineV2";
+import { loadCadernoV2 } from "@/lib/v2";
+type AnyObj = Record<string, unknown>;
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function itemsFromMapa(mapa: unknown): unknown[] {
+  if (!mapa) return [];
+  if (Array.isArray(mapa)) return mapa as unknown[];
+  if (isObj(mapa)) {
+    const t = (mapa as AnyObj)["timeline"];
+    if (Array.isArray(t)) return t as unknown[];
+    const it = (mapa as AnyObj)["items"];
+    if (Array.isArray(it)) return it as unknown[];
+    const n = (mapa as AnyObj)["nodes"];
+    if (Array.isArray(n)) return n as unknown[];
+  }
+  return [];
+}
+
+export default async function Page(props: { params: Promise<{ slug: string }> }) {
+  const { slug } = await props.params;
+  const data = await loadCadernoV2(slug);
+  const meta = (data as unknown as { meta?: { title?: string } }).meta;
+  const title = meta?.title ?? slug;
+  const mapa = (data as unknown as { mapa?: unknown }).mapa;
+  const items = itemsFromMapa(mapa as unknown);
+
+
+  return (
+    <main className="space-y-5">
+      <header className="card p-5">
+        <div className="text-xs muted">V2 • Linha do tempo</div>
+        <h1 className="text-2xl font-semibold leading-tight mt-1">{title}</h1>
+        <p className="muted mt-1">Derivada do mapa (nodes): datas, tipos, tags.</p>
+      </header>
+
+      <V2Nav slug={slug} active="linha" />
+      <TimelineV2 slug={slug} title={title} items={items} />
+    </main>
+  );
+}

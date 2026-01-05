@@ -1,0 +1,241 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+
+type NodeLite = { id: string; title: string; kind?: string; tags?: string[] };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function asString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+function asStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string") as string[];
+  if (typeof v === "string") return [v];
+  return [];
+}
+function normNode(v: unknown): NodeLite | null {
+  if (!isRecord(v)) return null;
+  const id = asString(v.id) || asString(v.slug) || asString(v.key);
+  const title = asString(v.title) || asString(v.name) || asString(v.label) || id;
+  if (!id) return null;
+  const kind = asString(v.kind) || asString(v.type) || undefined;
+  const tags = asStringArray(v.tags) ;
+  return { id, title, kind, tags: tags.length ? tags : undefined };
+}
+function collectNodes(mapa: unknown): NodeLite[] {
+  const out: NodeLite[] = [];
+  const seen = new Set<string>();
+
+  function push(n: NodeLite | null) {
+    if (!n) return;
+    if (seen.has(n.id)) return;
+    seen.add(n.id);
+    out.push(n);
+  }
+
+  function walk(v: unknown, depth: number) {
+    if (depth > 6) return;
+    if (Array.isArray(v)) {
+      for (const it of v) walk(it, depth + 1);
+      return;
+    }
+    if (!isRecord(v)) return;
+
+    // caso clássico: { nodes: [...] }
+    if (Array.isArray(v.nodes)) {
+      for (const n of v.nodes) push(normNode(n));
+    }
+
+    // alguns mapas guardam em "items" ou "mapa"
+    if (Array.isArray(v.items)) {
+      for (const n of v.items) push(normNode(n));
+    }
+
+    // varre algumas chaves comuns sem explodir tudo
+    const keys = ["mapa", "data", "panorama", "content", "graph"];
+    for (const k of keys) {
+      if (k in v) walk(v[k], depth + 1);
+    }
+  }
+
+  walk(mapa, 0);
+
+  // ordena com calma: kind primeiro (se houver), depois título
+  out.sort((a, b) => {
+    const ka = (a.kind || "").toLowerCase();
+    const kb = (b.kind || "").toLowerCase();
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    const ta = a.title.toLowerCase();
+    const tb = b.title.toLowerCase();
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+  return out;
+}
+
+export default function MapaDockV2(props: { slug: string; mapa: unknown }) {
+  const [open, setOpen] = useState(true);
+  const [q, setQ] = useState("");
+  const [copied, setCopied] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const calc = () => setIsMobile(window.innerWidth < 980);
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, []);
+
+  const nodes = useMemo(() => collectNodes(props.mapa), [props.mapa]);
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return nodes.slice(0, 24);
+    const r = nodes.filter((n) => {
+      const base = (n.title + " " + n.id + " " + (n.kind || "") + " " + (n.tags ? n.tags.join(" ") : "")).toLowerCase();
+      return base.includes(qq);
+    });
+    return r.slice(0, 24);
+  }, [nodes, q]);
+
+  async function copyLink(id: string) {
+    try {
+      const url = window.location.origin + "/c/" + props.slug + "/v2/mapa#" + encodeURIComponent(id);
+      await navigator.clipboard.writeText(url);
+      setCopied(id);
+      setTimeout(() => setCopied(""), 1200);
+    } catch {
+      /* noop */
+    }
+  }
+
+  const shell: CSSProperties = {
+    background: "rgba(10,10,12,0.88)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 14,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+    backdropFilter: "blur(10px)",
+    color: "rgba(255,255,255,0.92)",
+  };
+
+  const wrap: CSSProperties = isMobile
+    ? { position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 40 }
+    : { position: "absolute", right: 16, top: 16, width: 360, zIndex: 30 };
+
+  const header: CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "10px 12px",
+    borderBottom: "1px solid rgba(255,255,255,0.10)",
+  };
+
+  const btn: CSSProperties = {
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.06)",
+    borderRadius: 10,
+    padding: "6px 10px",
+    cursor: "pointer",
+    color: "rgba(255,255,255,0.92)",
+  };
+
+  const pill: CSSProperties = {
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.04)",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontSize: 12,
+    opacity: 0.95,
+    textDecoration: "none",
+    color: "rgba(255,255,255,0.92)",
+    display: "inline-flex",
+    gap: 8,
+    alignItems: "center",
+  };
+
+  return (
+    <div style={wrap}>
+      <div style={shell}>
+        <div style={header}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>Mapa • Dock</div>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>atalhos + nós (link #id)</div>
+          </div>
+          <button type="button" onClick={() => setOpen((v) => !v)} style={btn}>
+            {open ? "Fechar" : "Abrir"}
+          </button>
+        </div>
+
+        {open ? (
+          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Link href={"/c/" + props.slug + "/v2"} style={pill}>⛩️ Home</Link>
+              <Link href={"/c/" + props.slug + "/v2/provas"} style={pill}>🧾 Provas</Link>
+              <Link href={"/c/" + props.slug + "/v2/linha"} style={pill}>🧵 Linha</Link>
+              <Link href={"/c/" + props.slug + "/v2/debate"} style={pill}>💬 Debate</Link>
+              <Link href={"/c/" + props.slug + "/v2/trilhas"} style={pill}>🧭 Trilhas</Link>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={"Buscar nó (título/id) • " + nodes.length + " nós"}
+                style={{
+                  flex: 1,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(0,0,0,0.25)",
+                  padding: "10px 12px",
+                  color: "rgba(255,255,255,0.92)",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            <div style={{ maxHeight: isMobile ? 220 : 360, overflow: "auto", paddingRight: 4 }}>
+              {filtered.length === 0 ? (
+                <div style={{ opacity: 0.75, fontSize: 13 }}>Nada encontrado.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {filtered.map((n) => (
+                    <div key={n.id} style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 12,
+                      padding: "10px 10px",
+                      background: "rgba(255,255,255,0.03)",
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 750, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {n.title}
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.7, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>#{n.id}</span>
+                          {n.kind ? <span>• {n.kind}</span> : null}
+                          {n.tags && n.tags.length ? <span>• {n.tags.slice(0, 3).join(", ")}</span> : null}
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => copyLink(n.id)} style={{ ...btn, padding: "6px 10px", fontSize: 12 }}>
+                        {copied === n.id ? "Copiado" : "Copiar link"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ fontSize: 12, opacity: 0.72, lineHeight: 1.3 }}>
+              Dica: o link copiado já vai com <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>#id</span>.
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}

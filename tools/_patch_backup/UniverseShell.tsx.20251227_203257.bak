@@ -1,0 +1,27 @@
+"use client";
+
+import React from "react";
+import { useParams } from "next/navigation";
+
+function moodFromSlug(slug: string): string {
+  const s = (slug || "").toLowerCase();
+  if (s.indexOf("poluicao") >= 0) return "smoke";
+  if (s.indexOf("trabalho") >= 0) return "steel";
+  if (s.indexOf("memoria") >= 0) return "archive";
+  if (s.indexOf("eco") >= 0) return "green";
+  return "urban";
+}
+
+export default function UniverseShell({ children }: { children: React.ReactNode }) {
+  const params = useParams() as { slug?: string };
+  const slug = (params && params.slug) ? String(params.slug) : "";
+  const mood = moodFromSlug(slug);
+  const cls = "cv-universe cv-mood-" + mood;
+  return (
+    <div className={cls}>
+      <div className="cv-universe-inner">
+        {children}
+      </div>
+    </div>
+  );
+}

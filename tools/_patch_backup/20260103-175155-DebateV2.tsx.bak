@@ -1,0 +1,148 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+
+export type DebatePrompt = { id: string; title: string; prompt: string };
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  return h.startsWith("#") ? h.slice(1) : h;
+}
+
+function setHashId(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    url.hash = id ? "#" + id : "";
+    window.history.replaceState(null, "", url.toString());
+    try { window.dispatchEvent(new HashChangeEvent("hashchange")); } catch { window.dispatchEvent(new Event("hashchange")); }
+  } catch {
+  }
+}
+
+function useHashId(): string {
+  return useSyncExternalStore(
+    (cb) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => readHashId(),
+    () => ""
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export function DebateV2(props: { slug: string; title: string; prompts: DebatePrompt[] }) {
+  const activeId = useHashId();
+
+  const prompts = useMemo(() => {
+    return (props.prompts || []).filter((p) => p && p.id && p.title && p.prompt);
+  }, [props.prompts]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const el = document.getElementById(activeId);
+    if (!el) return;
+    const t = setTimeout(() => {
+      try { el.scrollIntoView({ behavior: "smooth", block: "start" }); } catch {}
+    }, 20);
+    return () => clearTimeout(t);
+  }, [activeId]);
+
+  const onFocus = useCallback((id: string) => setHashId(id), []);
+  const onClear = useCallback(() => setHashId(""), []);
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <header style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(0,0,0,0.22)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, opacity: 0.75 }}>Debate V2</div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{props.title}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, opacity: 0.85, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+              Foco: {activeId ? "#" + activeId : "nenhum"}
+            </span>
+            <button
+              onClick={onClear}
+              type="button"
+              title="Limpar foco (remover hash)"
+              style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+            >
+              Limpar foco
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {prompts.map((p) => {
+          const isActive = activeId && activeId === p.id;
+          return (
+            <section key={p.id} id={p.id} style={{ borderRadius: 14, padding: 12, border: isActive ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.18)" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => onFocus(p.id)}
+                      type="button"
+                      title="Definir foco via hash"
+                      style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "6px 10px", borderRadius: 999, background: isActive ? "var(--accent)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: isActive ? "#111" : "inherit" }}
+                    >
+                      #{p.id}
+                    </button>
+                    <div style={{ fontSize: 14, fontWeight: 900 }}>{p.title}</div>
+                  </div>
+                  <div style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95, whiteSpace: "pre-wrap" }}>{p.prompt}</div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    title="Copiar prompt"
+                    style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                    onClick={async () => { const ok = await copyText(p.prompt); if (!ok) alert("Não consegui copiar aqui. Tenta manualmente."); }}
+                  >
+                    Copiar
+                  </button>
+                  <button
+                    type="button"
+                    title="Focar (hash) e destacar"
+                    style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                    onClick={() => onFocus(p.id)}
+                  >
+                    Focar
+                  </button>
+                </div>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

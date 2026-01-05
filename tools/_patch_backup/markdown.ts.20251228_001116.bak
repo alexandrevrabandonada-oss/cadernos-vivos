@@ -1,0 +1,108 @@
+// Auto-generated (hotfix) - markdown renderer minimalista e estavel.
+
+function escapeHtml(input: string): string {
+  return (input || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, '&#39;');
+}
+
+function inline(s: string): string {
+  let t = escapeHtml(s);
+
+  // code `x`
+  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  // bold **x**
+  t = t.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+
+  // italic *x* (simples)
+  t = t.replace(/(^|[^*])\*([^*]+?)\*(?!\*)/g, "$1<em>$2</em>");
+
+  // links [texto](url)
+  t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
+    const rawUrl = String(url || "").replace(/\s+/g, "");
+    const allowed = /^(https?:\/\/|mailto:)/i.test(rawUrl) ? rawUrl : "#";
+    return "<a href=\\"" + allowed + "\\" target=\\"_blank\\" rel=\\"noreferrer\\">" + String(text || "") + "</a>";
+  });
+
+  return t;
+}
+
+function renderBlocks(md: string): string {
+  const src = (md || "").replace(/\r\n/g, "\n");
+  const lines = src.split("\n");
+
+  const out: string[] = [];
+  let inCode = false;
+  let codeBuf: string[] = [];
+  let inUl = false;
+  let inOl = false;
+
+  function flushList(): void {
+    if (inUl) { out.push("</ul>"); inUl = false; }
+    if (inOl) { out.push("</ol>"); inOl = false; }
+  }
+
+  function flushCode(): void {
+    if (!inCode) return;
+    const body = escapeHtml(codeBuf.join("\n"));
+    out.push("<pre><code>" + body + "</code></pre>");
+    codeBuf = [];
+    inCode = false;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const line = raw.trimEnd();
+
+    if (line.startsWith("```")) {
+      if (inCode) { flushCode(); } else { flushList(); inCode = true; codeBuf = []; }
+      continue;
+    }
+
+    if (inCode) { codeBuf.push(raw); continue; }
+
+    if (line.trim() === "") { flushList(); continue; }
+
+    if (line.startsWith("# ")) { flushList(); out.push("<h1>" + inline(line.slice(2).trim()) + "</h1>"); continue; }
+    if (line.startsWith("## ")) { flushList(); out.push("<h2>" + inline(line.slice(3).trim()) + "</h2>"); continue; }
+    if (line.startsWith("### ")) { flushList(); out.push("<h3>" + inline(line.slice(4).trim()) + "</h3>"); continue; }
+
+    if (line.startsWith(">")) { flushList(); out.push("<blockquote>" + inline(line.replace(/^>\\s?/, "")) + "</blockquote>"); continue; }
+
+    if (line.startsWith("- ") || line.startsWith("* ")) {
+      if (inOl) { out.push("</ol>"); inOl = false; }
+      if (!inUl) { out.push("<ul>"); inUl = true; }
+      out.push("<li>" + inline(line.slice(2).trim()) + "</li>");
+      continue;
+    }
+
+    if (/^\\d+\\.\\s+/.test(line)) {
+      if (inUl) { out.push("</ul>"); inUl = false; }
+      if (!inOl) { out.push("<ol>"); inOl = true; }
+      const item = line.replace(/^\\d+\\.\\s+/, "");
+      out.push("<li>" + inline(item.trim()) + "</li>");
+      continue;
+    }
+
+    flushList();
+    out.push("<p>" + inline(line.trim()) + "</p>");
+  }
+
+  flushCode();
+  flushList();
+  return out.join("\n");
+}
+
+export function renderMarkdown(md: string): string {
+  return renderBlocks(md);
+}
+
+// Aliases compatíveis (páginas antigas / engines)
+export const simpleMarkdownToHtml = renderMarkdown;
+export const markdownToHtml = renderMarkdown;
+export const mdToHtml = renderMarkdown;
+export default renderMarkdown;

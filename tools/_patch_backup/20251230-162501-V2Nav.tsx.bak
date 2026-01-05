@@ -1,0 +1,56 @@
+import Link from "next/link";
+
+type Props = {
+  slug: string;
+  active?: string;
+};
+
+export default function V2Nav(props: Props) {
+  const slug = props.slug;
+  const active = props.active || "";
+  const base = "/c/" + slug + "/v2";
+
+  const items = [
+    { href: "/c/" + slug, label: "V1" },
+    { key: "home", label: "V2", href: base },
+    { key: "mapa", label: "Mapa", href: base + "/mapa" },
+    { key: "debate", label: "Debate", href: base + "/debate" },
+    { key: "provas", label: "Provas", href: base + "/provas" },
+    { key: "trilhas", label: "Trilhas", href: base + "/trilhas" },
+    { key: "linha-do-tempo", label: "Linha do tempo", href: base + "/linha-do-tempo" }
+  ];
+
+  return (
+    <nav style={{
+      display: "flex",
+      gap: 10,
+      flexWrap: "wrap",
+      alignItems: "center",
+      padding: "10px 12px",
+      border: "1px solid rgba(255,255,255,0.10)",
+      borderRadius: 12,
+      background: "rgba(0,0,0,0.35)"
+    }}>
+      {items.map((it) => {
+        const on = active === it.key;
+        return (
+          <Link
+            key={it.href}
+            href={it.href}
+            style={{
+              textDecoration: "none",
+              padding: "6px 10px",
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: on ? "rgba(255,255,255,0.10)" : "transparent",
+              color: "inherit",
+              opacity: on ? 1 : 0.85
+            }}
+          >
+            {it.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}

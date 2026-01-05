@@ -1,0 +1,48 @@
+export type UiDefault = "v1" | "v2";
+
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
+
+export type MetaV2 = {
+  slug: string;
+  title: string;
+  subtitle?: string;
+  mood?: string;
+  accent?: string;
+  ethos?: string;
+  ui?: { default?: UiDefault };
+  [k: string]: JsonValue;
+};
+
+export type MapaNodeV2 = {
+  id: string;
+  label?: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  tags?: string[];
+  data?: Record<string, JsonValue>;
+};
+
+export type MapaEdgeV2 = { from: string; to: string; kind?: string; label?: string };
+
+export type MapaV2 = { nodes: MapaNodeV2[]; edges?: MapaEdgeV2[]; [k: string]: JsonValue };
+
+export type AcervoItemV2 = { id: string; title?: string; url?: string; kind?: string; tags?: string[]; [k: string]: JsonValue };
+export type AcervoV2 = { items: AcervoItemV2[]; [k: string]: JsonValue };
+
+export type DebateV2 = { items?: JsonValue[]; [k: string]: JsonValue };
+export type RegistroV2 = { items?: JsonValue[]; [k: string]: JsonValue };
+
+export type AulaV2 = { slug: string; num: number; markdown: string };
+
+export type CadernoV2 = {
+  meta: MetaV2;
+  panoramaMd: string;
+  referenciasMd: string;
+  mapa: MapaV2;
+  acervo: AcervoV2;
+  debate: DebateV2;
+  registro: RegistroV2;
+  aulas: AulaV2[];
+  issues: string[];
+};

@@ -1,0 +1,35 @@
+import React from "react";
+
+
+
+
+
+import UniverseShell from "@/components/UniverseShell";
+
+
+
+
+
+
+
+export default function CadernoLayout({ children }: { children: React.ReactNode }) {
+
+
+  return (
+
+
+    <UniverseShell>
+
+
+
+
+      {children}
+
+
+    </UniverseShell>
+
+
+  );
+
+
+}

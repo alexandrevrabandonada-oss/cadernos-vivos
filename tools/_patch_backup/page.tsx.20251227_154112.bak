@@ -1,0 +1,49 @@
+import path from "path";
+import { readFile } from "fs/promises";
+import type { CSSProperties } from "react";
+
+import CadernoHeader from "@/components/CadernoHeader";
+import { NavPills } from "@/components/CadernoHeader";
+import MutiraoRegistro from "@/components/MutiraoRegistro";
+import { getCaderno } from "@/lib/cadernos";
+import type { MapPoint } from "@/components/TerritoryMap";
+
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+
+function pointsFromJson(raw: string): MapPoint[] {
+  try {
+    const data = JSON.parse(raw) as unknown;
+    if (Array.isArray(data)) return data as MapPoint[];
+    if (data && typeof data === "object") {
+      const obj = data as Record<string, unknown>;
+      const pts = obj["points"];
+      if (Array.isArray(pts)) return pts as MapPoint[];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await getCaderno(slug);
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+
+  let points: MapPoint[] = [];
+  try {
+    const p = path.join(process.cwd(), "content", "cadernos", slug, "mapa.json");
+    const raw = await readFile(p, "utf8");
+    points = pointsFromJson(raw);
+  } catch {
+    points = [];
+  }
+
+  return (
+    <main className="space-y-5" style={s}>
+      <CadernoHeader title={data.meta.title} subtitle={data.meta.subtitle} ethos={data.meta.ethos} />
+      <NavPills slug={slug} />
+      <MutiraoRegistro points={points} />
+    </main>
+  );
+}

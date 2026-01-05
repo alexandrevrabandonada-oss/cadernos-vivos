@@ -1,0 +1,65 @@
+import Link from "next/link";
+
+type ActiveKey = "home" | "mapa" | "debate" | "provas" | "linha" | "linhaTempo" | "trilhas" | "v1";
+type ActiveProp = ActiveKey | "linha-do-tempo";
+
+export default function V2Nav(props: { slug: string; active?: ActiveProp }) {
+  const slug = props.slug;
+  const active: ActiveKey = (props.active === "linha-do-tempo") ? "linhaTempo" : (props.active ?? "home");
+
+  const items: { key: ActiveKey; label: string; href: string }[] = [
+    { key: "home", label: "V2", href: "/c/" + slug + "/v2" },
+    { key: "mapa", label: "Mapa", href: "/c/" + slug + "/v2/mapa" },
+    { key: "debate", label: "Debate", href: "/c/" + slug + "/v2/debate" },
+    { key: "provas", label: "Provas", href: "/c/" + slug + "/v2/provas" },
+    { key: "linha", label: "Linha", href: "/c/" + slug + "/v2/linha" },
+    { key: "linhaTempo", label: "Linha do tempo", href: "/c/" + slug + "/v2/linha-do-tempo" },
+    { key: "trilhas", label: "Trilhas", href: "/c/" + slug + "/v2/trilhas" },
+    { key: "v1", label: "V1", href: "/c/" + slug },
+  ];
+
+  return (
+    <nav style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginTop: 6, marginBottom: 10 }}>
+      {items.map((it) => {
+        const on = active === it.key;
+        return (
+          <Link
+            key={it.key}
+            href={it.href}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.14)",
+              textDecoration: "none",
+              color: "white",
+              background: on ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.20)",
+              opacity: on ? 1 : 0.92,
+            }}
+          >
+            {it.label}
+          </Link>
+        );
+      })}
+    
+      <a
+        href={"/c/" + 
+props.slug
+}
+        title="Voltar para V1"
+        style={{
+          marginLeft: 10,
+          fontSize: 12,
+          fontWeight: 900,
+          padding: "6px 10px",
+          borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.14)",
+          background: "rgba(255,255,255,0.06)",
+          textDecoration: "none",
+          color: "inherit",
+        }}
+      >
+        V1
+      </a>
+</nav>
+  );
+}

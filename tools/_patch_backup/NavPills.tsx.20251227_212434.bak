@@ -1,0 +1,44 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+
+type Params = Record<string, string | string[]>;
+
+function pick(v: string | string[] | undefined): string {
+  if (Array.isArray(v)) return v[0] || "";
+  return v || "";
+}
+
+export default function NavPills(props: { slug?: string }) {
+  const params = useParams() as Params;
+  const inferred = pick(params ? params["slug"] : undefined);
+  const slug = props.slug || inferred;
+  if (!slug) return null;
+
+  const items = [
+    { href: "/c/" + slug, label: "Panorama" },
+    { href: "/c/" + slug + "/trilha", label: "Trilha" },
+    { href: "/c/" + slug + "/a/1", label: "Aulas" },
+    { href: "/c/" + slug + "/pratica", label: "Prática" },
+    { href: "/c/" + slug + "/quiz", label: "Quiz" },
+    { href: "/c/" + slug + "/acervo", label: "Acervo" },
+    { href: "/c/" + slug + "/mapa", label: "Mapa" },
+    { href: "/c/" + slug + "/debate", label: "Debate" },
+    { href: "/c/" + slug + "/registro", label: "Registro" }
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2 mt-4">
+      {items.map((it) => (
+        <Link
+          key={it.href}
+          href={it.href}
+          className="card px-3 py-2 text-sm hover:bg-white/10 transition"
+        >
+          <span className="accent">{it.label}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}

@@ -1,0 +1,132 @@
+// Stable markdown renderer (no deps).
+
+export type MarkdownRenderOptions = {
+  allowLinks?: boolean;
+};
+
+function escapeHtml(s: string): string {
+  return (s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderInline(s: string, allowLinks: boolean): string {
+  let t = escapeHtml(s);
+
+  // inline code
+  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+  // bold then italic (ordem importa)
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+  if (allowLinks) {
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text, url) => {
+      const raw = String(url || "").trim();
+      const allowed = /^(https?:\/\/|mailto:)/i.test(raw) ? raw : "#";
+      const safeText = String(text || "");
+      return "<a href=\"" + allowed + "\" target=\"_blank\" rel=\"noreferrer\">" + safeText + "</a>";
+    });
+  } else {
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, text) => String(text || ""));
+  }
+
+  return t;
+}
+
+export function markdownToHtml(md: string, opts: MarkdownRenderOptions = {}): string {
+  const allowLinks = opts.allowLinks !== false;
+  const src = (md || "").replace(/\r\n?/g, "\n");
+  const lines = src.split("\n");
+
+  const out: string[] = [];
+  let inCode = false;
+  const codeBuf: string[] = [];
+  let listType: "" | "ul" | "ol" = "";
+  const listBuf: string[] = [];
+
+  function flushList(): void {
+    if (!listType) return;
+    out.push("<" + listType + ">" + listBuf.join("") + "</" + listType + ">");
+    listType = "";
+    listBuf.length = 0;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const line = rawLine == null ? "" : String(rawLine);
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      if (inCode) {
+        out.push("<pre><code>" + escapeHtml(codeBuf.join("\n")) + "</code></pre>");
+        codeBuf.length = 0;
+        inCode = false;
+      } else {
+        flushList();
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeBuf.push(line);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushList();
+      continue;
+    }
+
+    // headings
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      flushList();
+      const m = trimmed.match(/^(#{1,6})\s+(.*)$/);
+      const level = m ? m[1].length : 2;
+      const text = m ? m[2] : trimmed;
+      out.push("<h" + level + ">" + renderInline(text, allowLinks) + "</h" + level + ">");
+      continue;
+    }
+
+    // blockquote
+    if (trimmed.startsWith(">")) {
+      flushList();
+      const inner = trimmed.replace(/^>\s?/, "");
+      out.push("<blockquote>" + renderInline(inner, allowLinks) + "</blockquote>");
+      continue;
+    }
+
+    // ordered list
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const item = trimmed.replace(/^\d+\.\s+/, "");
+      if (listType !== "ol") { flushList(); listType = "ol"; }
+      listBuf.push("<li>" + renderInline(item, allowLinks) + "</li>");
+      continue;
+    }
+
+    // unordered list
+    if (/^[-*]\s+/.test(trimmed)) {
+      const item = trimmed.replace(/^[-*]\s+/, "");
+      if (listType !== "ul") { flushList(); listType = "ul"; }
+      listBuf.push("<li>" + renderInline(item, allowLinks) + "</li>");
+      continue;
+    }
+
+    // paragraph
+    flushList();
+    out.push("<p>" + renderInline(trimmed, allowLinks) + "</p>");
+  }
+
+  if (inCode) {
+    out.push("<pre><code>" + escapeHtml(codeBuf.join("\n")) + "</code></pre>");
+  }
+  flushList();
+
+  return out.join("\n");
+}
+
+// compat: rota de aula importa esse nome
+export const simpleMarkdownToHtml = markdownToHtml;

@@ -1,0 +1,1 @@
+# CV Hotfix v0.2b — 2025-12-27 11:31  Correções: - PowerShell agora usa -LiteralPath em caminhos com [slug]/[aula] (sem wildcard) - TryFindZip agora força array (@(...)) e não quebra com 1 item - Rotas Next 16 com params Promise + await params - Removeu as any (lint) - Garante /c/[slug]/acervo e acervo.json  Testar: - /c/poluicao-vr - /c/poluicao-vr/acervo

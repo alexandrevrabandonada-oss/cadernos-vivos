@@ -1,0 +1,1 @@
+# CV-2d — Hotfix ESLint DebateBoard — 2025-12-27 12:34  ## Problema - ESLint: react-hooks/set-state-in-effect (setState dentro de useEffect)  ## Correção - DebateBoard agora carrega do localStorage na inicialização do state (useMemo + useState) - Removeu useEffect e os setState no effect  ## Verify - npm run lint (deve passar)

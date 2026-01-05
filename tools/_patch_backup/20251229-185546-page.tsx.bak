@@ -1,0 +1,25 @@
+import { redirect } from "next/navigation";
+import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
+import Markdown from "@/components/Markdown";
+import CadernoShell from "@/components/CadernoShell";
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await getCaderno(slug);
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+  return (
+    <CadernoShell title={data.meta.title} subtitle={data.meta.subtitle} ethos={data.meta.ethos} style={s}>
+<div className="card p-5">
+        <h2 className="text-xl font-semibold">Panorama</h2>
+        <div className="mt-4"><Markdown markdown={data.panorama} /></div>
+      </div>
+      {data.referencias ? (
+        <div className="card p-5">
+          <h3 className="text-lg font-semibold">Referências do pacote</h3>
+          <div className="mt-4"><Markdown markdown={data.referencias} /></div>
+        </div>
+      ) : null}
+    </CadernoShell>
+  );
+}

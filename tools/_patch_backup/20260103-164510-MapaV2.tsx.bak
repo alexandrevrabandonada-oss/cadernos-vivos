@@ -1,0 +1,391 @@
+"use client";
+
+import Link from "next/link";
+import React, { useCallback, useEffect, useMemo, useSyncExternalStore, useState } from "react";
+
+type AnyObj = Record<string, unknown>;
+type NodeLite = { id: string; title: string; kind: string; x?: number; y?: number; tags: string[]; raw: unknown };
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  return h.startsWith("#") ? h.slice(1) : h;
+}
+
+function setHashId(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    url.hash = id ? "#" + id : "";
+    window.history.replaceState(null, "", url.toString());
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  } catch {
+  }
+}
+
+function useHashId(): string {
+  return useSyncExternalStore(
+    (cb) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => readHashId(),
+    () => ""
+  );
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function itemsFromMapa(mapa: unknown): unknown[] {
+  if (!mapa) return [];
+  if (Array.isArray(mapa)) return mapa;
+  if (isObj(mapa)) {
+    const nodes = (mapa as AnyObj)["nodes"];
+    if (Array.isArray(nodes)) return nodes;
+    const items = (mapa as AnyObj)["items"];
+    if (Array.isArray(items)) return items;
+    const timeline = (mapa as AnyObj)["timeline"];
+    if (Array.isArray(timeline)) return timeline;
+  }
+  return [];
+}
+
+function toStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function toNum(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function toStrArr(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const it of v) {
+    if (typeof it === "string" && it.trim()) out.push(it.trim());
+  }
+  return out;
+}
+
+function nodeFromUnknown(v: unknown, idx: number): NodeLite {
+  if (isObj(v)) {
+    const id = toStr(v["id"]) || toStr(v["slug"]) || toStr(v["key"]) || ("n" + idx);
+    const title = toStr(v["title"]) || toStr(v["name"]) || toStr(v["label"]) || id;
+    const kind = toStr(v["kind"]) || toStr(v["type"]) || "node";
+    const x = toNum(v["x"]);
+    const y = toNum(v["y"]);
+    const tags = toStrArr(v["tags"]);
+    return { id, title, kind, x, y, tags, raw: v };
+  }
+  return { id: "n" + idx, title: "Nó " + idx, kind: "node", tags: [], raw: v };
+}
+
+function normNodes(items: unknown[]): NodeLite[] {
+  const out: NodeLite[] = [];
+  for (let i = 0; i < items.length; i++) out.push(nodeFromUnknown(items[i], i));
+  // dedupe por id (último ganha)
+  const seen: Record<string, NodeLite> = {};
+  for (const n of out) seen[n.id] = n;
+  return Object.values(seen);
+}
+
+export function MapaV2(props: { slug: string; title: string; mapa?: unknown; items?: unknown[] }) {
+  const activeId = useHashId();
+  const [q, setQ] = useState("");
+
+  const inputItems = useMemo(() => {
+    const it = Array.isArray(props.items) ? props.items : itemsFromMapa(props.mapa);
+    return it;
+  }, [props.items, props.mapa]);
+
+  const nodes = useMemo(() => {
+    return normNodes(inputItems);
+  }, [inputItems]);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return nodes;
+    return nodes.filter((n) => {
+      const t = (n.title || "").toLowerCase();
+      const k = (n.kind || "").toLowerCase();
+      const tg = (n.tags || []).join(" ").toLowerCase();
+      const id = (n.id || "").toLowerCase();
+      return t.includes(qq) || k.includes(qq) || tg.includes(qq) || id.includes(qq);
+    });
+  }, [nodes, q]);
+
+  const hasXY = useMemo(() => {
+    return nodes.some((n) => typeof n.x === "number" && typeof n.y === "number" && ((n.x || 0) !== 0 || (n.y || 0) !== 0));
+  }, [nodes]);
+
+  const onFocus = useCallback((id: string) => setHashId(id), []);
+  const onClear = useCallback(() => setHashId(""), []);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const el = document.getElementById("node-" + activeId);
+    if (!el) return;
+    const t = setTimeout(() => {
+      try { el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }); } catch {}
+    }, 20);
+    return () => clearTimeout(t);
+  }, [activeId]);
+
+  const activeNode = useMemo(() => {
+    if (!activeId) return null;
+    return nodes.find((n) => n.id === activeId) || null;
+  }, [activeId, nodes]);
+
+  const base = "/c/" + props.slug;
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <header style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 16, padding: 12, background: "rgba(0,0,0,0.22)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ fontSize: 12, opacity: 0.75, fontWeight: 900 }}>Mapa V2</div>
+            <div style={{ fontSize: 18, fontWeight: 950, letterSpacing: -0.2 }}>{props.title}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, opacity: 0.85, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+              Nós: {filtered.length}/{nodes.length}
+            </span>
+            <span style={{ fontSize: 12, opacity: 0.85, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>
+              Foco: {activeId ? "#" + activeId : "nenhum"}
+            </span>
+            <button type="button" onClick={onClear} title="Limpar foco" style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}>
+              Limpar foco
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 12, alignItems: "start" }}>
+        <aside style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 16, padding: 12, background: "rgba(0,0,0,0.18)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar nó (título, tag, tipo, id)..."
+                style={{ width: "100%", padding: "10px 10px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.22)", color: "inherit", outline: "none" }}
+              />
+            </div>
+
+            <div style={{ display: "grid", gap: 8, maxHeight: 520, overflow: "auto", paddingRight: 2 }}>
+              {filtered.map((n) => {
+                const isActive = !!activeId && activeId === n.id;
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => onFocus(n.id)}
+                    title="Focar no canvas"
+                    style={{
+                      textAlign: "left",
+                      cursor: "pointer",
+                      borderRadius: 14,
+                      padding: 10,
+                      border: isActive ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.04)",
+                      color: "inherit",
+                      display: "grid",
+                      gap: 4,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ fontWeight: 950, fontSize: 13, lineHeight: 1.2 }}>{n.title}</div>
+                      <span style={{ fontSize: 11, opacity: 0.7, fontWeight: 900 }}>#{n.id}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, opacity: 0.75, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)" }}>{n.kind}</span>
+                      {n.tags.slice(0, 3).map((t) => (
+                        <span key={t} style={{ fontSize: 11, opacity: 0.75, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)" }}>{t}</span>
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        <section style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 16, padding: 12, background: "rgba(0,0,0,0.18)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, opacity: 0.75, fontWeight: 900 }}>Canvas</span>
+              <span style={{ fontSize: 12, opacity: 0.55 }}>{hasXY ? "posicionado (x/y)" : "grade (sem x/y)"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" title="Copiar link atual" style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                onClick={async () => {
+                  const ok = await copyText(typeof window !== "undefined" ? window.location.href : "");
+                  if (!ok) alert("Nao consegui copiar aqui.");
+                }}
+              >
+                Copiar link
+              </button>
+              <Link href={base + "/v2/provas"} style={{ textDecoration: "none", color: "inherit", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                Provas
+              </Link>
+              <Link href={base + "/v2/debate"} style={{ textDecoration: "none", color: "inherit", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                Debate
+              </Link>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12, borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.20)", padding: 10, minHeight: 520, overflow: "auto" }}>
+            {hasXY ? (
+              <div style={{ position: "relative", minHeight: 900 }}>
+                {nodes.map((n, idx) => {
+                  const isActive = !!activeId && activeId === n.id;
+                  const left = typeof n.x === "number" ? n.x : 40 + ((idx % 5) * 240);
+                  const top = typeof n.y === "number" ? n.y : 40 + (Math.floor(idx / 5) * 120);
+                  return (
+                    <button
+                      key={n.id}
+                      id={"node-" + n.id}
+                      type="button"
+                      onClick={() => onFocus(n.id)}
+                      title="Focar (hash)"
+                      style={{
+                        position: "absolute",
+                        left: left,
+                        top: top,
+                        width: 220,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        borderRadius: 14,
+                        padding: 10,
+                        border: isActive ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.10)",
+                        background: "rgba(255,255,255,0.04)",
+                        color: "inherit",
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ fontWeight: 950, fontSize: 13, lineHeight: 1.2 }}>{n.title}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, opacity: 0.75, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)" }}>{n.kind}</span>
+                        <span style={{ fontSize: 11, opacity: 0.65, fontWeight: 900 }}>#{n.id}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                {nodes.map((n, idx) => {
+                  const isActive = !!activeId && activeId === n.id;
+                  return (
+                    <button
+                      key={n.id}
+                      id={"node-" + n.id}
+                      type="button"
+                      onClick={() => onFocus(n.id)}
+                      title="Focar (hash)"
+                      style={{
+                        textAlign: "left",
+                        cursor: "pointer",
+                        borderRadius: 14,
+                        padding: 10,
+                        border: isActive ? "2px solid var(--accent)" : "1px solid rgba(255,255,255,0.10)",
+                        background: "rgba(255,255,255,0.04)",
+                        color: "inherit",
+                        display: "grid",
+                        gap: 6,
+                        minHeight: 92,
+                      }}
+                    >
+                      <div style={{ fontWeight: 950, fontSize: 13, lineHeight: 1.2 }}>{n.title}</div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, opacity: 0.75, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.10)" }}>{n.kind}</span>
+                        <span style={{ fontSize: 11, opacity: 0.65, fontWeight: 900 }}>#{n.id}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 10, borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.22)", padding: 12, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, opacity: 0.75, fontWeight: 950 }}>Dock</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" title="Copiar ID do foco" style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                  onClick={async () => {
+                    const ok = await copyText(activeId ? activeId : "");
+                    if (!ok) alert("Nao consegui copiar aqui.");
+                  }}
+                >
+                  Copiar ID
+                </button>
+                <button type="button" title="Copiar JSON do nó (best-effort)" style={{ cursor: "pointer", fontSize: 12, fontWeight: 900, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "inherit" }}
+                  onClick={async () => {
+                    const txt = activeNode ? JSON.stringify(activeNode.raw, null, 2) : "";
+                    const ok = await copyText(txt);
+                    if (!ok) alert("Nao consegui copiar aqui.");
+                  }}
+                >
+                  Copiar JSON
+                </button>
+              </div>
+            </div>
+
+            {activeNode ? (
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 950 }}>{activeNode.title}</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, opacity: 0.85, padding: "4px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>#{activeNode.id}</span>
+                  <span style={{ fontSize: 12, opacity: 0.85, padding: "4px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>{activeNode.kind}</span>
+                  {activeNode.tags.map((t) => (
+                    <span key={t} style={{ fontSize: 12, opacity: 0.85, padding: "4px 10px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)" }}>{t}</span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, opacity: 0.8 }}>
+                Clique em um nó para focar e ver detalhes aqui.
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <style jsx>{`
+        @media (max-width: 920px) {
+          div[style*="grid-template-columns: 320px 1fr"] {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}

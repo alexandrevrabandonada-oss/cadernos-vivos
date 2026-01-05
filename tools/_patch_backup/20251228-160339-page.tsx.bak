@@ -1,0 +1,40 @@
+import Link from 'next/link';
+import { loadCadernoV2 } from '@/lib/v2';
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let metaTitle = slug;
+  let uiDefault: string = 'v2';
+
+  try {
+    const c = await loadCadernoV2(slug);
+    metaTitle = c?.meta?.title || slug;
+    uiDefault = c?.meta?.ui?.default || 'v2';
+  } catch {
+    // placeholder: se ainda não houver conteúdo V2 pro slug, não quebra
+  }
+
+  return (
+    <main style={{ padding: 24, maxWidth: 980, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 16, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>V2 — Concreto Zen</h1>
+        <div style={{ display: 'flex', gap: 12 }}>
+          <Link href={'/c/' + slug} style={{ textDecoration: 'underline' }}>← Voltar pra V1</Link>
+        </div>
+      </div>
+
+      <p style={{ marginTop: 10, opacity: 0.85 }}>
+        Placeholder do shell V2. Próximo tijolo: Home V2 (3 portas + fios quentes).
+      </p>
+
+      <div style={{ marginTop: 18, padding: 16, border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12 }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <span><b>slug:</b> {slug}</span>
+          <span><b>title:</b> {metaTitle}</span>
+          <span><b>meta.ui.default:</b> {uiDefault}</span>
+        </div>
+      </div>
+    </main>
+  );
+}

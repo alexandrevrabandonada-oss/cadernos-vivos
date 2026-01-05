@@ -1,0 +1,45 @@
+import Link from "next/link";
+import { loadCadernoV2 } from "@/lib/v2";
+
+function asObj(v: unknown): Record<string, unknown> | null {
+  if (!v || typeof v !== "object") return null;
+  return v as Record<string, unknown>;
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  let cTitle = slug;
+  try {
+    const c = await loadCadernoV2(slug);
+    const cObj = asObj(c);
+    const metaObj = asObj(cObj ? cObj["meta"] : null);
+    cTitle = asStr(metaObj ? metaObj["title"] : null) || slug;
+  } catch {
+    // ok
+  }
+  return (
+    <main style={{ padding: 24, maxWidth: 1040, margin: "0 auto" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ opacity: 0.75, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}>Concreto Zen • V2</div>
+          <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.03em", marginTop: 6 }}>
+Debate V2
+</h1>
+          <p style={{ marginTop: 6, opacity: 0.85 }}>{cTitle}</p>
+        </div>
+        <nav style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug + "/v2"} style={{ textDecoration: "underline" }}>← Home V2</Link>
+          <Link href={"/c/" + slug} style={{ textDecoration: "underline" }}>V1</Link>
+        </nav>
+      </header>
+      <section style={{ marginTop: 16, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 14 }}>
+        <p style={{ margin: 0, opacity: 0.8 }}>
+Em breve: perguntas + posições + provas (Tijolo D3).
+</p>
+      </section>
+    </main>
+  );
+}

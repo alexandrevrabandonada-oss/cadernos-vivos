@@ -1,0 +1,31 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { useMemo } from "react";
+import { usePathname } from "next/navigation";
+
+type Props = { children: ReactNode };
+
+function modeFromPath(pathname: string): string {
+  // Exemplos:
+  // /c/slug -> home
+  // /c/slug/a/2 -> aula
+  // /c/slug/mapa -> mapa
+  if (!pathname) return "home";
+  if (pathname.indexOf("/a/") >= 0) return "aula";
+  if (pathname.endsWith("/mapa")) return "mapa";
+  if (pathname.endsWith("/debate")) return "debate";
+  if (pathname.endsWith("/quiz")) return "quiz";
+  if (pathname.endsWith("/pratica")) return "pratica";
+  if (pathname.endsWith("/registro")) return "registro";
+  if (pathname.endsWith("/acervo")) return "acervo";
+  if (pathname.endsWith("/trilha")) return "trilha";
+  return "home";
+}
+
+export default function UniverseShell({ children }: Props) {
+  const pathname = usePathname() || "";
+  const mode = useMemo(() => modeFromPath(pathname), [pathname]);
+  const cls = "cv-universe cv-u cv-u--" + mode;
+  return <div className={cls}>{children}</div>;
+}

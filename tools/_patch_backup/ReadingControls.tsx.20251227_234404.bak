@@ -1,0 +1,143 @@
+"use client";
+
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+type Prefs = { reading: boolean; scale: number };
+
+const KEY = "cv_reading_prefs";
+const EVT = "cv:prefs";
+const DEFAULT_RAW = '{"reading":false,"scale":1}';
+
+function normalize(obj: unknown): Prefs {
+  const o = (obj && typeof obj === "object") ? (obj as { reading?: unknown; scale?: unknown }) : {};
+  const reading = o.reading === true;
+  const scale = (typeof o.scale === "number" && o.scale >= 0.9 && o.scale <= 1.6) ? o.scale : 1;
+  return { reading, scale };
+}
+
+function readRaw(): string {
+  if (typeof window === "undefined") return DEFAULT_RAW;
+  try {
+    const v = window.localStorage.getItem(KEY);
+    return v ? String(v) : DEFAULT_RAW;
+  } catch {
+    return DEFAULT_RAW;
+  }
+}
+
+function subscribe(cb: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (e: StorageEvent) => {
+    if (!e || !("key" in e) || e.key === null || e.key === KEY) cb();
+  };
+  const onCustom = () => cb();
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(EVT, onCustom);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(EVT, onCustom);
+  };
+}
+
+function getServerSnapshot(): string {
+  return DEFAULT_RAW;
+}
+
+function getSnapshot(): string {
+  return readRaw();
+}
+
+function writePrefs(p: Prefs) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(KEY, JSON.stringify(p)); } catch {}
+  try { window.dispatchEvent(new Event(EVT)); } catch {}
+}
+
+function applyPrefs(p: Prefs) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  root.classList.toggle("cv-reading", p.reading);
+  root.style.setProperty("--cv-font-scale", String(p.scale));
+}
+
+export default function ReadingControls() {
+  const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const prefs = useMemo(() => {
+    try { return normalize(JSON.parse(raw)); } catch { return normalize(null); }
+  }, [raw]);
+
+  const [speaking, setSpeaking] = useState(false);
+  const utterRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  const canTts = useMemo(() => (typeof window !== "undefined" && "speechSynthesis" in window), []);
+
+  useEffect(() => {
+    // efeito só sincroniza DOM (externo) — sem setState
+    applyPrefs(prefs);
+  }, [prefs.reading, prefs.scale]);
+
+  function pickText(): string {
+    if (typeof document === "undefined") return "";
+    const main = document.querySelector("main");
+    const t = main ? (main as HTMLElement).innerText : document.body.innerText;
+    return (t || "").trim();
+  }
+
+  function stopTts() {
+    if (typeof window === "undefined") return;
+    try { window.speechSynthesis.cancel(); } catch {}
+    utterRef.current = null;
+    setSpeaking(false);
+  }
+
+  function startTts() {
+    if (!canTts) return;
+    const text = pickText();
+    if (!text) return;
+    stopTts();
+    const u = new SpeechSynthesisUtterance(text);
+    utterRef.current = u;
+    u.onend = () => { setSpeaking(false); utterRef.current = null; };
+    u.onerror = () => { setSpeaking(false); utterRef.current = null; };
+    setSpeaking(true);
+    window.speechSynthesis.speak(u);
+  }
+
+  return (
+    <section className="card p-4 flex flex-wrap gap-2 items-center" aria-label="Controles de leitura">
+      <button
+        type="button"
+        className="card px-3 py-2 hover:bg-white/10 transition"
+        aria-pressed={prefs.reading}
+        onClick={() => writePrefs({ reading: !prefs.reading, scale: prefs.scale })}
+      >
+        {prefs.reading ? "Leitura: ON" : "Leitura: OFF"}
+      </button>
+
+      <label className="text-sm muted flex items-center gap-2" aria-label="Tamanho do texto">
+        <span>A</span>
+        <input
+          type="range"
+          min={0.9}
+          max={1.6}
+          step={0.05}
+          value={prefs.scale}
+          onChange={(e) => writePrefs({ reading: prefs.reading, scale: Number(e.target.value) })}
+        />
+        <span>A+</span>
+      </label>
+
+      <div className="flex gap-2 items-center">
+        <button
+          type="button"
+          className="card px-3 py-2 hover:bg-white/10 transition"
+          onClick={() => (speaking ? stopTts() : startTts())}
+          disabled={!canTts}
+          aria-pressed={speaking}
+        >
+          {canTts ? (speaking ? "Parar voz" : "Ouvir") : "Voz indisponível"}
+        </button>
+      </div>
+    </section>
+  );
+}

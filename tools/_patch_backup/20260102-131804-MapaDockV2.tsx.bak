@@ -1,0 +1,223 @@
+"use client";
+
+import Link from "next/link";
+import React, { useSyncExternalStore, useEffect, useMemo, useState } from "react";
+
+function readHashId(): string {
+  if (typeof window === "undefined") return "";
+  const h = window.location.hash || "";
+  return h.startsWith("#") ? h.slice(1) : h;
+}
+
+function setHashId(id: string) {
+  try {
+    if (typeof window === "undefined") return;
+    const next = "#" + id;
+    if (window.location.hash === next) return;
+    window.history.replaceState(null, "", next);
+    window.dispatchEvent(new Event("hashchange"));
+  } catch {
+    // noop
+  }
+}
+
+function useHashId(): string {
+  return useSyncExternalStore(
+    (cb) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener("hashchange", cb);
+      window.addEventListener("popstate", cb);
+      return () => {
+        window.removeEventListener("hashchange", cb);
+        window.removeEventListener("popstate", cb);
+      };
+    },
+    () => readHashId(),
+    () => ""
+  );
+}
+
+
+type NodeItem = { id: string; title: string; kind?: string; tags?: string[]; text?: string };
+
+function isRecord(v: unknown): v is Record<string, unknown> { return typeof v === "object" && v !== null; }
+function asString(v: unknown): string | undefined { return typeof v === "string" ? v : undefined; }
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: string[] = [];
+  for (const x of v) if (typeof x === "string") out.push(x);
+  return out.length ? out : undefined;
+}
+function pickArray(obj: Record<string, unknown>, keys: string[]): unknown[] | undefined {
+  for (const k of keys) { const v = obj[k]; if (Array.isArray(v)) return v as unknown[]; }
+  return undefined;
+}
+function pickString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) { const s = asString(obj[k]); if (s && s.trim()) return s; }
+  return undefined;
+}
+function safeIdFrom(title: string, i: number): string {
+  const base = title.toLowerCase().trim().replace(/[^a-z0-9\\s_-]+/g, "").replace(/\\s+/g, "-").slice(0, 48);
+  return (base ? base : "no") + "-" + String(i + 1);
+}
+function normalizeNodes(input: unknown): NodeItem[] {
+  let arr: unknown[] | undefined;
+  if (Array.isArray(input)) arr = input;
+  else if (isRecord(input)) {
+    arr = pickArray(input, ["nodes","items","list","entries","mapa","mindmap"]);
+    if (!arr) {
+      const m = input["mapa"];
+      if (Array.isArray(m)) arr = m as unknown[];
+      if (!arr && isRecord(m)) arr = pickArray(m, ["nodes","items","list","entries"]);
+    }
+  }
+  if (!arr) return [];
+  const out: NodeItem[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const it = arr[i];
+    if (!isRecord(it)) continue;
+    const title = pickString(it, ["title","titulo","name","nome","label"]) ?? ("No " + String(i + 1));
+    const id = pickString(it, ["id","slug","key"]) ?? safeIdFrom(title, i);
+    const kind = pickString(it, ["kind","type","tipo"]);
+    const tags = asStringArray(it["tags"]) ?? asStringArray(it["tag"]);
+    const text = pickString(it, ["text","texto","desc","descricao","description","notes","nota"]);
+    out.push({ id, title, kind, tags, text });
+  }
+  return out;
+}
+
+export default function MapaDockV2(props: { slug: string; mapa?: unknown }) {
+  const nodes = useMemo(() => normalizeNodes(props.mapa), [props.mapa]);
+  const [q, setQ] = useState<string>("");
+  const selectedId = useHashId();
+
+  useEffect(() => {
+    const onSelect = (ev: Event) => {
+      const ce = ev as CustomEvent<{ id?: string }>;
+      const id = ce.detail?.id;
+      if (id) setHashId(id);
+    };
+    window.addEventListener("cv:map:select", onSelect as EventListener);
+    return () => window.removeEventListener("cv:map:select", onSelect as EventListener);
+  }, []);
+  const [copied, setCopied] = useState<string>("");
+
+  useEffect(() => {
+    const onHash = () => setSelectedId(readHashId());
+    window.addEventListener("hashchange", onHash);
+    const t = setTimeout(onHash, 0);
+    const onSel = (ev: Event) => {
+      const ce = ev as CustomEvent<{ id?: string }>;
+      const id = ce.detail?.id;
+      if (id) setSelectedId(id);
+    };
+    window.addEventListener("cv:mapa-select", onSel as unknown as EventListener);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("cv:mapa-select", onSel as unknown as EventListener);
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return nodes;
+    return nodes.filter((n) => {
+      const hay = (n.title + " " + (n.kind ?? "") + " " + (n.text ?? "") + " " + (n.tags?.join(" ") ?? "")).toLowerCase();
+      return hay.includes(qq);
+    });
+  }, [nodes, q]);
+
+  const selected = useMemo(() => filtered.find((n) => n.id === selectedId) ?? nodes.find((n) => n.id === selectedId), [filtered, nodes, selectedId]);
+
+  async function copyLink(id: string) {
+    try {
+      const url = window.location.origin + "/c/" + props.slug + "/v2/mapa#" + id;
+      await navigator.clipboard.writeText(url);
+      setCopied(id);
+      setTimeout(() => setCopied(""), 1200);
+    } catch {
+      // noop
+    }
+  }
+
+  return (
+    <aside style={{
+      border: "1px solid rgba(255,255,255,0.10)",
+      borderRadius: 16,
+      background: "rgba(0,0,0,0.22)",
+      padding: 12,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+        <div>
+          <div style={{ fontWeight: 900, letterSpacing: 0.4 }}>HUD</div>
+          <div style={{ opacity: 0.72, fontSize: 12 }}>Mapa • {nodes.length} nos</div>
+        </div>
+        <nav style={{ display: "flex", gap: 10, flexWrap: "wrap", opacity: 0.9 }}>
+          <Link href={"/c/" + props.slug + "/v2/provas"} style={{ textDecoration: "underline" }}>Provas</Link>
+          <Link href={"/c/" + props.slug + "/v2/debate"} style={{ textDecoration: "underline" }}>Debate</Link>
+          <Link href={"/c/" + props.slug + "/v2/linha"} style={{ textDecoration: "underline" }}>Linha</Link>
+          <Link href={"/c/" + props.slug + "/v2/trilhas"} style={{ textDecoration: "underline" }}>Trilhas</Link>
+        </nav>
+      </div>
+
+      <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar no mapa..."
+          style={{ flex: "1 1 220px", padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.25)", color: "white" }}
+        />
+        <div style={{ opacity: 0.75, fontSize: 12 }}>{filtered.length} resultado(s)</div>
+      </div>
+
+      {selected ? (
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 14, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,215,0,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 200 }}>
+              <div style={{ fontWeight: 900 }}>{selected.title}</div>
+              <div style={{ opacity: 0.75, fontSize: 12, marginTop: 2 }}>{(selected.kind ?? "ideia") + (selected.tags?.length ? " • " + selected.tags.join(", ") : "")}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <a href={"#" + selected.id} style={{ textDecoration: "underline" }}>Focar</a>
+              <button type="button" onClick={() => copyLink(selected.id)} style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(0,0,0,0.25)", color: "white", cursor: "pointer" }}>
+                {copied === selected.id ? "Copiado!" : "Copiar link"}
+              </button>
+            </div>
+          </div>
+          {selected.text ? (
+            <div style={{ marginTop: 8, opacity: 0.9, lineHeight: 1.35, fontSize: 13 }}>{selected.text}</div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: 10, maxHeight: 320, overflow: "auto", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+        {filtered.map((n, i) => {
+          const on = n.id === selectedId;
+          return (
+            <a
+              key={n.id + "-" + String(i)}
+              href={"#" + n.id}
+              style={{
+                display: "block",
+                padding: "9px 10px",
+                borderRadius: 12,
+                marginBottom: 6,
+                textDecoration: "none",
+                color: "white",
+                border: on ? "1px solid rgba(255,215,0,0.45)" : "1px solid rgba(255,255,255,0.10)",
+                background: on ? "rgba(255,215,0,0.08)" : "rgba(0,0,0,0.18)",
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{n.title}</div>
+              <div style={{ opacity: 0.72, fontSize: 12, marginTop: 2 }}>{(n.kind ?? "ideia")}</div>
+            </a>
+          );
+        })}
+        {!filtered.length ? (
+          <div style={{ opacity: 0.75, padding: 10, borderRadius: 12, border: "1px dashed rgba(255,255,255,0.18)" }}>Nada encontrado.</div>
+        ) : null}
+      </div>
+    </aside>
+  );
+}

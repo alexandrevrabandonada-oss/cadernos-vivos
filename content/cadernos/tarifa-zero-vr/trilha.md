@@ -1,0 +1,1 @@
+# Trilha de leitura — Tarifa Zero em Volta Redonda  ## Etapa 1 — Entender o problema (15–30 min) - Leia o Panorama - Veja 2 documentos do Acervo  ## Etapa 2 — Organizar provas (30–60 min) - Liste 5 fatos verificáveis - Separe por tema (saúde, trabalho, território, orçamento...)  ## Etapa 3 — Saída prática - Defina pedido concreto - Faça 1 registro (ata) de ação coletiva

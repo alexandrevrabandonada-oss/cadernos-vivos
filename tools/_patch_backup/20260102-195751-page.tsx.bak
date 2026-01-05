@@ -1,0 +1,66 @@
+/* eslint-disable react/no-unescaped-entities */
+import Link from "next/link";
+import V2Nav from "@/components/v2/V2Nav";
+import { loadCadernoV2 } from "@/lib/v2";
+import { getTrailsV2 } from "@/lib/v2";
+
+function asTitle(v: unknown, fallback: string): string {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return fallback;
+}
+
+export default async function Page(props: { params: Promise<{ slug: string }> }) {
+  const slug = (await props.params).slug;
+  const caderno = await loadCadernoV2(slug);
+  const title = asTitle((caderno as Record<string, unknown>)["title"], slug);
+  const trails = getTrailsV2(caderno);
+
+  return (
+    <main style={{ maxWidth: 980, margin: "0 auto", padding: 16 }}>
+      <header style={{ marginBottom: 12 }}>
+        <div style={{ opacity: 0.7, fontSize: 12 }}>Caderno: {title}</div>
+        <h1 style={{ margin: "6px 0 10px 0", letterSpacing: 0.2 }}>Trilhas</h1>
+        <V2Nav slug={slug} active="trilhas" />
+      </header>
+
+      {trails.length === 0 ? (
+        <section style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, padding: 14, opacity: 0.9 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Nenhuma trilha encontrada.</div>
+          <div style={{ opacity: 0.8, lineHeight: 1.5 }}>
+            Para aparecer aqui, você pode adicionar <code style={{ opacity: 0.9 }}>trilhas</code> no caderno (meta/panorama) ou criar nodes no mapa com <code style={{ opacity: 0.9 }}>type: "trail"</code>.
+          </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Link href={"/c/" + slug + "/v2"} style={{ textDecoration: "underline" }}>Voltar ao V2 Home</Link>
+            <Link href={"/c/" + slug + "/v2/mapa"} style={{ textDecoration: "underline" }}>Abrir Mapa</Link>
+          </div>
+        </section>
+      ) : (
+        <section style={{ display: "grid", gap: 12 }}>
+          {trails.map((t) => (
+            <article key={t.id} style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+                <div style={{ fontWeight: 800, letterSpacing: 0.2 }}>{t.title}</div>
+                <div style={{ opacity: 0.6, fontSize: 12 }}>#{t.id}</div>
+              </div>
+              {t.summary ? <div style={{ marginTop: 6, opacity: 0.85, lineHeight: 1.55 }}>{t.summary}</div> : null}
+              {t.tags && t.tags.length ? (
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", opacity: 0.85 }}>
+                  {t.tags.map((tag) => (
+                    <span key={tag} style={{ border: "1px solid rgba(255,255,255,0.12)", padding: "3px 8px", borderRadius: 999, fontSize: 12 }}>{tag}</span>
+                  ))}
+                </div>
+              ) : null}
+              <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Link href={"/c/" + slug + "/v2/trilhas/" + t.id} style={{ textDecoration: "underline" }}>Abrir trilha</Link>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+
+      <footer style={{ marginTop: 18, opacity: 0.65, fontSize: 12 }}>
+        <div>V2 • Trilhas derivadas do caderno (sem any).</div>
+      </footer>
+    </main>
+  );
+}

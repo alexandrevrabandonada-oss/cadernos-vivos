@@ -1,0 +1,53 @@
+import "server-only";
+import path from "path";
+import fs from "fs/promises";
+import { normalizeCaderno } from "./normalize";
+
+type LoadOpts = { baseDir?: string };
+
+function slugToTitle(slug: string) {
+  return slug.replace(/[-_]+/g, " ").replace(/\b\w/g, m => m.toUpperCase());
+}
+
+export async function getCadernoV2(slug: string, opts: LoadOpts = {}) {
+  const base = opts.baseDir || path.join(process.cwd(), "content", "cadernos");
+  const dir = path.join(base, slug);
+
+  const metaPath = path.join(dir, "meta.json");
+  const panoramaPath = path.join(dir, "panorama.md");
+  const refsPath = path.join(dir, "referencias.md");
+  const mapaPath = path.join(dir, "mapa.json");
+  const acervoPath = path.join(dir, "acervo.json");
+  const debatePath = path.join(dir, "debate.json");
+  const registroPath = path.join(dir, "registro.json");
+
+  let metaRaw: unknown = { title: slugToTitle(slug) };
+  try { metaRaw = JSON.parse(await fs.readFile(metaPath, "utf8")); } catch {}
+
+  let panoramaMd = "";
+  try { panoramaMd = await fs.readFile(panoramaPath, "utf8"); } catch {}
+
+  let referenciasMd = "";
+  try { referenciasMd = await fs.readFile(refsPath, "utf8"); } catch {}
+
+  const mapaRaw = await fs.readFile(mapaPath, "utf8");
+  const acervoRaw = await fs.readFile(acervoPath, "utf8");
+  const debateRaw = await fs.readFile(debatePath, "utf8");
+  let registroRaw = "{}";
+  try { registroRaw = await fs.readFile(registroPath, "utf8"); } catch {}
+
+  // aulas: aula-*.md
+  let aulas: { slug: string; num: number; markdown: string }[] = [];
+  try {
+    const files = await fs.readdir(dir);
+    const aulaFiles = files.filter(f => /^aula-\\d+\\.md$/.test(f));
+    const loaded = await Promise.all(aulaFiles.map(async f => {
+      const n = Number(f.replace("aula-","").replace(".md",""));
+      const md = await fs.readFile(path.join(dir, f), "utf8");
+      return { slug: f.replace(".md",""), num: n, markdown: md };
+    }));
+    aulas = loaded.sort((a,b) => a.num - b.num);
+  } catch {}
+
+  return normalizeCaderno({ slug, metaRaw, panoramaMd, referenciasMd, mapaRaw, acervoRaw, debateRaw, registroRaw, aulas });
+}

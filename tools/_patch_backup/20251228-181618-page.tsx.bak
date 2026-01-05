@@ -1,0 +1,217 @@
+import Link from "next/link";
+import path from "path";
+import { readFile } from "fs/promises";
+import { loadCadernoV2 } from "@/lib/v2";
+
+type Trail = {
+  id: string;
+  title: string;
+  desc: string | null;
+  tags: string[];
+  steps: string[];
+};
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+function asStr(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asArr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+function safeId(v: string, fallback: string): string {
+  const s = (v || "").trim();
+  if (!s) return fallback;
+  const out = s.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+  return out || fallback;
+}
+function uniqStr(arr: string[]): string[] {
+  const set = new Set<string>();
+  for (const x of arr) {
+    const t = (x || "").trim();
+    if (t) set.add(t);
+  }
+  return Array.from(set);
+}
+
+async function readTrilhasJson(slug: string): Promise<unknown | null> {
+  try {
+    const file = path.join(process.cwd(), "content", "cadernos", slug, "trilhas.json");
+    const txt = await readFile(file, "utf8");
+    return JSON.parse(txt) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function nodesFromMapa(mapa: unknown): unknown[] {
+  if (Array.isArray(mapa)) return mapa;
+  if (isObj(mapa)) {
+    const n = mapa["nodes"];
+    if (Array.isArray(n)) return n;
+  }
+  return [];
+}
+
+function buildNodeTitleIndex(mapa: unknown): Record<string, string> {
+  const idx: Record<string, string> = {};
+  const nodes = nodesFromMapa(mapa);
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (!isObj(n)) continue;
+    const rawId = asStr(n["id"]) || asStr(n["slug"]) || asStr(n["key"]) || "";
+    const id = safeId(rawId, "n" + (i + 1));
+    const title = asStr(n["title"]) || asStr(n["label"]) || asStr(n["nome"]) || ("Nodo " + (i + 1));
+    idx[id] = title;
+  }
+  return idx;
+}
+
+function normalizeTrailsFromJson(raw: unknown): Trail[] {
+  // aceita: array direto OU { trails: [...] } OU { trilhas: [...] }
+  const arr = Array.isArray(raw)
+    ? raw
+    : (isObj(raw) && Array.isArray(raw["trails"])) ? (raw["trails"] as unknown[])
+    : (isObj(raw) && Array.isArray(raw["trilhas"])) ? (raw["trilhas"] as unknown[])
+    : [];
+
+  const out: Trail[] = [];
+  for (let i = 0; i < arr.length; i++) {
+    const t = arr[i];
+    if (!isObj(t)) continue;
+    const rid = asStr(t["id"]) || asStr(t["slug"]) || asStr(t["key"]) || "";
+    const id = safeId(rid, "trail-" + (i + 1));
+    const title = asStr(t["title"]) || asStr(t["nome"]) || ("Trilha " + (i + 1));
+    const desc = asStr(t["desc"]) || asStr(t["summary"]) || asStr(t["texto"]);
+    const tagsRaw = t["tags"];
+    const tags = Array.isArray(tagsRaw) ? tagsRaw.filter((x) => typeof x === "string") as string[] : [];
+    const stepsRaw = t["steps"] || t["nodes"] || t["path"];
+    const steps = Array.isArray(stepsRaw) ? stepsRaw.filter((x) => typeof x === "string") as string[] : [];
+    out.push({ id, title, desc, tags: uniqStr(tags), steps: uniqStr(steps) });
+  }
+  return out;
+}
+
+function normalizeTrailsFromMapa(mapa: unknown): Trail[] {
+  const nodes = nodesFromMapa(mapa);
+  const out: Trail[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (!isObj(n)) continue;
+    const kind = asStr(n["kind"]) || asStr(n["type"]) || asStr(n["tipo"]) || "";
+    if (kind.toLowerCase() !== "trail") continue;
+    const rid = asStr(n["id"]) || asStr(n["slug"]) || asStr(n["key"]) || "";
+    const id = safeId(rid, "trail-" + (i + 1));
+    const title = asStr(n["title"]) || asStr(n["label"]) || asStr(n["nome"]) || ("Trilha " + (i + 1));
+    const desc = asStr(n["desc"]) || asStr(n["summary"]) || asStr(n["texto"]);
+    const tagsRaw = n["tags"];
+    const tags = Array.isArray(tagsRaw) ? tagsRaw.filter((x) => typeof x === "string") as string[] : [];
+    const stepsRaw = n["steps"] || n["nodes"] || n["path"];
+    const steps = Array.isArray(stepsRaw) ? stepsRaw.filter((x) => typeof x === "string") as string[] : [];
+    out.push({ id, title, desc, tags: uniqStr(tags), steps: uniqStr(steps) });
+  }
+  return out;
+}
+
+function pickTrails(trilhasJson: unknown | null, mapa: unknown): { trails: Trail[]; source: "json" | "mapa" | "none" } {
+  const a = trilhasJson ? normalizeTrailsFromJson(trilhasJson) : [];
+  if (a.length > 0) return { trails: a, source: "json" };
+  const b = normalizeTrailsFromMapa(mapa);
+  if (b.length > 0) return { trails: b, source: "mapa" };
+  return { trails: [], source: "none" };
+}
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let title = slug;
+  let mapa: unknown = { nodes: [] };
+  try {
+    const c = await loadCadernoV2(slug);
+    if (isObj(c)) {
+      const meta = isObj(c["meta"]) ? (c["meta"] as Record<string, unknown>) : null;
+      title = meta ? (asStr(meta["title"]) || slug) : slug;
+      mapa = c["mapa"];
+    }
+  } catch {
+    // ok
+  }
+
+  const raw = await readTrilhasJson(slug);
+  const picked = pickTrails(raw, mapa);
+  const idx = buildNodeTitleIndex(mapa);
+
+  return (
+    <main style={{ padding: 24, maxWidth: 1240, margin: "0 auto" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ opacity: 0.75, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}>Concreto Zen • V2</div>
+          <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.03em", marginTop: 6 }}>Trilhas</h1>
+          <p style={{ marginTop: 6, opacity: 0.85 }}>{title}</p>
+        </div>
+        <nav style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href={"/c/" + slug + "/v2"} style={{ textDecoration: "underline" }}>Home V2</Link>
+          <Link href={"/c/" + slug + "/v2/mapa"} style={{ textDecoration: "underline" }}>Mapa</Link>
+          <Link href={"/c/" + slug + "/v2/linha"} style={{ textDecoration: "underline" }}>Linha</Link>
+          <Link href={"/c/" + slug + "/v2/debate"} style={{ textDecoration: "underline" }}>Debate</Link>
+          <Link href={"/c/" + slug + "/v2/provas"} style={{ textDecoration: "underline" }}>Provas</Link>
+          <Link href={"/c/" + slug} style={{ textDecoration: "underline" }}>V1</Link>
+        </nav>
+      </header>
+
+      <section style={{ marginTop: 14, border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
+          <div style={{ fontWeight: 900 }}>Fonte: {picked.source === "json" ? "trilhas.json" : picked.source === "mapa" ? "mapa.json (nodes trail)" : "nenhuma ainda"}</div>
+          <div style={{ opacity: 0.7, fontSize: 12 }}>trilhas: <b>{picked.trails.length}</b></div>
+        </div>
+        {picked.source === "none" ? (
+          <div style={{ marginTop: 10, opacity: 0.85, lineHeight: 1.6 }}>
+            Ainda nao existe <code>trilhas.json</code> neste caderno e nao encontrei nodes com <code>kind/type: "trail"</code> no mapa.
+            <div style={{ marginTop: 8, opacity: 0.75, fontSize: 12 }}>
+              Opcoes: criar <code>content/cadernos/{slug}/trilhas.json</code> (com trilhas/trails) ou marcar nodes do mapa como trail.
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+        {picked.trails.map((t) => (
+          <article key={t.id} style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, padding: 14, background: "rgba(0,0,0,0.14)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "baseline" }}>
+              <div>
+                <div style={{ fontWeight: 950, letterSpacing: "-0.01em" }}>{t.title}</div>
+                <div style={{ marginTop: 4, opacity: 0.7, fontSize: 12 }}>id: {t.id} • passos: <b>{t.steps.length}</b></div>
+              </div>
+              <Link href={"/c/" + slug + "/v2/trilhas/" + t.id} style={{ border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.92)", borderRadius: 12, padding: "8px 12px", fontSize: 12, textDecoration: "none" }}>abrir trilha</Link>
+            </div>
+
+            {t.desc ? <div style={{ marginTop: 10, opacity: 0.92, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{t.desc}</div> : null}
+
+            {t.tags.length > 0 ? (
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {t.tags.map((x) => <span key={x} style={{ border: "1px solid rgba(255,255,255,0.14)", borderRadius: 999, padding: "3px 8px", fontSize: 12 }}>{x}</span>)}
+              </div>
+            ) : null}
+
+            {t.steps.length > 0 ? (
+              <div style={{ marginTop: 10, opacity: 0.85, fontSize: 12, lineHeight: 1.6 }}>
+                <b>preview:</b>{" "}
+                {t.steps.slice(0, 6).map((sid, i) => (
+                  <span key={sid}>
+                    {i > 0 ? " • " : ""}{idx[sid] ? idx[sid] : sid}
+                  </span>
+                ))}
+                {t.steps.length > 6 ? <span> • +{t.steps.length - 6}</span> : null}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </section>
+
+      <footer style={{ marginTop: 18, opacity: 0.6, fontSize: 12 }}>
+        Extra opcional depois: feature flag em meta.json (ui.default) + links V1↔V2.
+      </footer>
+    </main>
+  );
+}

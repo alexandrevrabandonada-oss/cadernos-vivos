@@ -1,0 +1,64 @@
+import fs from "fs/promises";
+import path from "path";
+import { z } from "zod";
+
+const CadernoMeta = z.object({
+  slug: z.string(),
+  title: z.string(),
+  subtitle: z.string().optional(),
+  accent: z.string().default("#ffd200"),
+  ethos: z.string().optional(),
+});
+export type CadernoMeta = z.infer<typeof CadernoMeta>;
+
+export type Flashcard = { q: string; a: string };
+export type QuizQ = { q: string; choices: string[]; answer: number };
+
+function rootContent() {
+  return path.join(process.cwd(), "content", "cadernos");
+}
+
+export async function listCadernos(): Promise<CadernoMeta[]> {
+  const base = rootContent();
+  const dirs = await fs.readdir(base, { withFileTypes: true });
+  const slugs = dirs.filter((d) => d.isDirectory()).map((d) => d.name);
+  const items: CadernoMeta[] = [];
+  for (const slug of slugs) {
+    const metaPath = path.join(base, slug, "caderno.json");
+    const raw = await fs.readFile(metaPath, "utf8");
+    items.push(CadernoMeta.parse(JSON.parse(raw)));
+  }
+  return items.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export async function getCaderno(slug: string) {
+  const base = rootContent();
+  const metaPath = path.join(base, slug, "caderno.json");
+  const panoramaPath = path.join(base, slug, "panorama.md");
+  const refsPath = path.join(base, slug, "referencias.md");
+  const aulasDir = path.join(base, slug, "aulas");
+  const praticaFlash = path.join(base, slug, "pratica", "flashcards.json");
+  const praticaQuiz = path.join(base, slug, "pratica", "quiz.json");
+
+  const meta = CadernoMeta.parse(JSON.parse(await fs.readFile(metaPath, "utf8")));
+  const panorama = await fs.readFile(panoramaPath, "utf8");
+  let referencias = "";
+  try { referencias = await fs.readFile(refsPath, "utf8"); } catch {}
+
+  const aulas = (await fs.readdir(aulasDir))
+    .filter((f) => f.endsWith(".md"))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  let flashcards: Flashcard[] = [];
+  let quiz: QuizQ[] = [];
+  try { flashcards = JSON.parse(await fs.readFile(praticaFlash, "utf8")); } catch {}
+  try { quiz = JSON.parse(await fs.readFile(praticaQuiz, "utf8")); } catch {}
+
+  return { meta, panorama, referencias, aulas, flashcards, quiz };
+}
+
+export async function getAula(slug: string, aula: string) {
+  const p = path.join(rootContent(), slug, "aulas", aula + ".md");
+  const markdown = await fs.readFile(p, "utf8");
+  return { aula, markdown };
+}

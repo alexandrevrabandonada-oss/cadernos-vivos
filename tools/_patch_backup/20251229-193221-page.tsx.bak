@@ -1,0 +1,27 @@
+import V2Nav from "@/components/v2/V2Nav";
+import DebateBoardV2 from "@/components/v2/DebateBoardV2";
+import { loadCadernoV2 } from "@/lib/v2";
+
+export default async function Page(props: { params: { slug: string } }) {
+  const slug = props.params.slug;
+  const c = await loadCadernoV2(slug);
+
+  const title = (c.meta && c.meta.title ? c.meta.title : slug);
+  const mapa = c.mapa;
+  const debate = c.debate;
+
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        padding: 16,
+        background: "#0b0b0c",
+        color: "white",
+      }}
+    >
+      <V2Nav slug={slug} active="debate" />
+      <div style={{ height: 12 }} />
+      <DebateBoardV2 slug={slug} title={title} mapa={mapa} debate={debate} />
+    </main>
+  );
+}

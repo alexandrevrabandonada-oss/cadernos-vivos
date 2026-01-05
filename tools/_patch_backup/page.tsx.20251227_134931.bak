@@ -1,0 +1,30 @@
+import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
+import { CadernoHeader, NavPills } from "@/components/CadernoHeader";
+import DebateBoard from "@/components/DebateBoard";
+
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const data = await getCaderno(slug);
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+
+  const prompts = (data.debate && data.debate.length) ? data.debate : [
+    { id: "P1", title: "O que está acontecendo?", prompt: "Descreva o fenômeno sem moralismo (estrutura, território, rotina)." },
+    { id: "P2", title: "Quem paga o custo?", prompt: "Exposição • vulnerabilidade • proteção: onde pesa mais e por quê." },
+    { id: "P3", title: "Que dado falta?", prompt: "O que você precisaria medir/confirmar (sem travar na ausência)." },
+  ];
+
+  return (
+    <main className="space-y-5" style={s}>
+      <CadernoHeader title={data.meta.title} subtitle={data.meta.subtitle} ethos={data.meta.ethos} />
+      <NavPills slug={slug} />
+      <div className="card p-5">
+        <h2 className="text-xl font-semibold">Debate</h2>
+        <p className="muted mt-2">Quadro de síntese (salva no seu aparelho). Fecha com pedido concreto + ajuda mútua.</p>
+      </div>
+      <DebateBoard slug={slug} prompts={prompts} />
+    </main>
+  );
+}

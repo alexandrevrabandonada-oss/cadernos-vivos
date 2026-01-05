@@ -1,0 +1,111 @@
+import type { CSSProperties } from "react";
+
+
+import { getCaderno } from "@/lib/cadernos";
+
+
+import Markdown from "@/components/Markdown";
+
+
+import CadernoShell from "@/components/CadernoShell";
+
+
+import { notFound, redirect } from "next/navigation";
+
+
+type AccentStyle = CSSProperties & { ["--accent"]?: string };
+
+
+type AnyObj = Record<string, unknown>;
+
+function isObj(v: unknown): v is AnyObj {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function uiDefault(meta: unknown): string {
+  if (!isObj(meta)) return "";
+  const ui = (meta as AnyObj)["ui"];
+  if (isObj(ui)) {
+    const d = (ui as AnyObj)["default"];
+    if (typeof d === "string") return d;
+  }
+  const d2 = (meta as AnyObj)["uiDefault"];
+  if (typeof d2 === "string") return d2;
+  return "";
+}
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+
+
+  const { slug } = await params;
+
+
+  let data: Awaited<ReturnType<typeof getCaderno>>;
+
+
+  try {
+
+
+  data = await getCaderno(slug);
+
+
+  } catch (e) {
+
+
+  const err = e as { code?: string };
+
+
+  if (err && err.code === "ENOENT") return notFound();
+
+
+  throw e;
+
+
+  }
+
+
+  const s: AccentStyle = { ["--accent"]: data.meta.accent };
+
+
+  return (
+
+
+    <CadernoShell title={data.meta.title} subtitle={data.meta.subtitle} ethos={data.meta.ethos} style={s}>
+
+
+<div className="card p-5">
+
+
+        <h2 className="text-xl font-semibold">Panorama</h2>
+
+
+        <div className="mt-4"><Markdown markdown={data.panorama} /></div>
+
+
+      </div>
+
+
+      {data.referencias ? (
+
+
+        <div className="card p-5">
+
+
+          <h3 className="text-lg font-semibold">Referências do pacote</h3>
+
+
+          <div className="mt-4"><Markdown markdown={data.referencias} /></div>
+
+
+        </div>
+
+
+      ) : null}
+
+
+    </CadernoShell>
+
+
+  );
+
+
+}

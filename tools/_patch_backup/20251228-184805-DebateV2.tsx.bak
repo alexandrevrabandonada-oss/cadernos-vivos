@@ -1,0 +1,75 @@
+import type { JsonValue } from "@/lib/v2/types";
+
+function asObj(v: unknown): Record<string, JsonValue> | null {
+  if (!v || typeof v !== "object") return null;
+  if (Array.isArray(v)) return null;
+  return v as Record<string, JsonValue>;
+}
+
+function asArr(v: unknown): JsonValue[] {
+  return Array.isArray(v) ? (v as JsonValue[]) : [];
+}
+
+function toText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return "";
+}
+
+export default function DebateV2({ debate }: { debate: JsonValue }) {
+  const root = asObj(debate) || {};
+  const qs = asArr(root["questions"] ?? root["perguntas"] ?? root["itens"]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+        <div className="text-sm opacity-70">Debate</div>
+        <div className="text-xl font-semibold">Perguntas e posições</div>
+        <div className="mt-1 text-sm opacity-70">
+          V2 placeholder estável (sem quebrar lint/build).
+        </div>
+      </div>
+
+      {qs.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm opacity-70">
+          Sem perguntas ainda neste caderno.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {qs.map((q, i) => {
+            const qo = asObj(q);
+            const title = toText(qo?.["title"] ?? qo?.["question"] ?? qo?.["pergunta"]) || ("Questao " + (i + 1));
+            const body = toText(qo?.["body"] ?? qo?.["text"] ?? qo?.["descricao"]);
+            const sides = asArr(qo?.["sides"] ?? qo?.["posicoes"] ?? qo?.["positions"]);
+
+            return (
+              <div key={i} className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="text-base font-semibold">{title}</div>
+                {body ? (
+                  <div className="mt-2 whitespace-pre-wrap text-sm opacity-80">{body}</div>
+                ) : null}
+                {sides.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {sides.slice(0, 12).map((s, j) => {
+                      const so = asObj(s);
+                      const label = toText(so?.["label"] ?? so?.["title"] ?? so?.["nome"]) || ("Posicao " + (j + 1));
+                      return (
+                        <span
+                          key={j}
+                          className="rounded-full border border-white/10 bg-black/30 px-3 py-1 text-xs opacity-90"
+                        >
+                          {label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,226 @@
+'use client';
+
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+
+type Jsonish = unknown;
+
+function asObj(v: unknown): Record<string, Jsonish> | null {
+  if (!v || typeof v !== 'object') return null;
+  return v as Record<string, Jsonish>;
+}
+function asArr(v: unknown): Jsonish[] {
+  return Array.isArray(v) ? (v as Jsonish[]) : [];
+}
+function asStr(v: unknown): string | null {
+  return typeof v === 'string' ? v : null;
+}
+function asNum(v: unknown): number | null {
+  return typeof v === 'number' ? v : null;
+}
+
+type NodeView = {
+  id: string;
+  title: string;
+  kind: string | null;
+  when: string | null;
+  x: number | null;
+  y: number | null;
+  raw: Record<string, Jsonish> | null;
+};
+
+type EdgeView = {
+  from: string;
+  to: string;
+  kind: string | null;
+  label: string | null;
+  raw: Record<string, Jsonish> | null;
+};
+
+type Props = { slug: string; title: string; mapa: unknown };
+
+function pickFirstStr(o: Record<string, Jsonish> | null, keys: string[]): string | null {
+  if (!o) return null;
+  for (const k of keys) {
+    const v = o[k];
+    const s = asStr(v);
+    if (s) return s;
+  }
+  return null;
+}
+function pickFirstNum(o: Record<string, Jsonish> | null, keys: string[]): number | null {
+  if (!o) return null;
+  for (const k of keys) {
+    const v = o[k];
+    const n = asNum(v);
+    if (typeof n === 'number') return n;
+  }
+  return null;
+}
+
+export default function MapaV2({ slug, title, mapa }: Props) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const parsed = useMemo(() => {
+    const root = asObj(mapa);
+    const nodesRaw = root ? root['nodes'] : null;
+    const edgesRaw = root ? root['edges'] : null;
+
+    const nodesArr = asArr(nodesRaw);
+    const edgesArr = asArr(edgesRaw);
+
+    const nodes: NodeView[] = nodesArr.map((n, i) => {
+      const o = asObj(n);
+      const id = pickFirstStr(o, ['id', 'slug', 'key']) || String(i + 1);
+      const t = pickFirstStr(o, ['title', 'label', 'name']) || 'Nodo';
+      const kind = pickFirstStr(o, ['kind', 'type', 'tag']);
+      const when = pickFirstStr(o, ['date', 'day', 'when', 'ano']);
+      const x = pickFirstNum(o, ['x', 'px', 'left']);
+      const y = pickFirstNum(o, ['y', 'py', 'top']);
+      return { id, title: t, kind, when, x, y, raw: o };
+    });
+
+    const edges: EdgeView[] = edgesArr.map((e, i) => {
+      const o = asObj(e);
+      const from = pickFirstStr(o, ['from', 'src', 'a']) || '';
+      const to = pickFirstStr(o, ['to', 'dst', 'b']) || '';
+      const kind = pickFirstStr(o, ['kind', 'type']);
+      const label = pickFirstStr(o, ['label', 'title', 'name']);
+      const id = (from && to) ? (from + '->' + to) : String(i + 1);
+      return { from, to, kind, label: label || id, raw: o };
+    }).filter((x) => x.from && x.to);
+
+    return { nodes, edges };
+  }, [mapa]);
+
+  const nodesLayout = useMemo(() => {
+    const colW = 220;
+    const rowH = 120;
+    const pad = 20;
+    return parsed.nodes.map((n, i) => {
+      const x = (typeof n.x === 'number') ? n.x : (pad + (i % 3) * colW);
+      const y = (typeof n.y === 'number') ? n.y : (pad + Math.floor(i / 3) * rowH);
+      return { ...n, x, y };
+    });
+  }, [parsed.nodes]);
+
+  const selected = useMemo(() => {
+    if (!selectedId) return null;
+    return nodesLayout.find((n) => n.id === selectedId) || null;
+  }, [nodesLayout, selectedId]);
+
+  const relatedEdges = useMemo(() => {
+    if (!selectedId) return { out: [] as EdgeView[], inn: [] as EdgeView[] };
+    const out = parsed.edges.filter((e) => e.from === selectedId);
+    const inn = parsed.edges.filter((e) => e.to === selectedId);
+    return { out, inn };
+  }, [parsed.edges, selectedId]);
+
+  const panelJson = useMemo(() => {
+    try {
+      return selected && selected.raw ? JSON.stringify(selected.raw, null, 2) : '';
+    } catch {
+      return '';
+    }
+  }, [selected]);
+
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+      <div style={{ flex: 2, minHeight: 520, border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>Mapa V2</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{title}</div>
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>nodes: {nodesLayout.length} | edges: {parsed.edges.length}</div>
+        </div>
+
+        <div style={{ position: 'relative', height: 520 }}>
+          {nodesLayout.map((n) => {
+            const isSel = selectedId === n.id;
+            return (
+              <button
+                key={n.id}
+                onClick={() => setSelectedId(n.id)}
+                type='button'
+                style={{
+                  position: 'absolute',
+                  left: n.x || 0,
+                  top: n.y || 0,
+                  width: 200,
+                  textAlign: 'left',
+                  padding: 10,
+                  borderRadius: 10,
+                  border: isSel ? '1px solid rgba(255,255,255,0.35)' : '1px solid rgba(255,255,255,0.10)',
+                  background: isSel ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.25)',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: 14 }}>{n.title}</div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                  <span>{n.kind ? n.kind : 'nodo'}</span>
+                  <span>•</span>
+                  <span>{n.when ? n.when : 'sem data'}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: 10, display: 'flex', gap: 10, flexWrap: 'wrap', opacity: 0.9 }}>
+          <Link href={/c//v2} style={{ textDecoration: 'underline' }}>V2 Home</Link>
+          <Link href={/c//v2/debate} style={{ textDecoration: 'underline' }}>Debate</Link>
+          <Link href={/c//v2/provas} style={{ textDecoration: 'underline' }}>Provas</Link>
+          <Link href={/c//v2/trilhas} style={{ textDecoration: 'underline' }}>Trilhas</Link>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 12, minHeight: 520 }}>
+        <div style={{ fontSize: 12, opacity: 0.7 }}>Painel</div>
+        {!selected ? (
+          <div style={{ marginTop: 10, opacity: 0.8 }}>Clique em um nodo para ver detalhes.</div>
+        ) : (
+          <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>{selected.title}</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>id: {selected.id}</div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, opacity: 0.85, border: '1px solid rgba(255,255,255,0.10)', padding: '2px 8px', borderRadius: 999 }}>
+                {selected.kind ? selected.kind : 'nodo'}
+              </span>
+              <span style={{ fontSize: 12, opacity: 0.85, border: '1px solid rgba(255,255,255,0.10)', padding: '2px 8px', borderRadius: 999 }}>
+                {selected.when ? selected.when : 'sem data'}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, opacity: 0.9 }}>Conexoes</div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Saindo: {relatedEdges.out.length}</div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Entrando: {relatedEdges.inn.length}</div>
+            </div>
+
+            {panelJson ? (
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 13, opacity: 0.9 }}>Raw</div>
+                <pre style={{ marginTop: 6, whiteSpace: 'pre-wrap', fontSize: 12, opacity: 0.85, border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 10, maxHeight: 240, overflow: 'auto' }}>
+                  {panelJson}
+                </pre>
+              </div>
+            ) : null}
+
+            <button
+              type='button'
+              onClick={() => setSelectedId(null)}
+              style={{ marginTop: 4, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)', padding: '8px 10px', background: 'rgba(0,0,0,0.25)', color: 'inherit', cursor: 'pointer' }}
+            >
+              Limpar selecao
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
