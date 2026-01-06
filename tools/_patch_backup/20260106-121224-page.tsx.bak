@@ -1,9 +1,7 @@
 import type { CSSProperties } from "react";
+import { getCaderno } from "@/lib/cadernos";
 import V2Nav from "@/components/v2/V2Nav";
 import ProvasV2 from "@/components/v2/ProvasV2";
-import { loadCadernoV2 } from "@/lib/v2";
-import type { Metadata } from "next";
-import { cvReadMetaLoose } from "@/lib/v2/load";
 
 type AnyParams = { slug: string } | Promise<{ slug: string }>; 
 type AnyObj = Record<string, unknown>;
@@ -17,21 +15,9 @@ async function getSlug(params: AnyParams): Promise<string> {
   return (p && p.slug) ? p.slug : "";
 }
 
-
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const meta = await cvReadMetaLoose(params.slug);
-  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
-  const m = meta as unknown as Record<string, unknown>;
-  const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
-  const description = rawDesc.trim().length ? rawDesc.trim() : undefined;
-  return {
-    title: title + " • Cadernos Vivos",
-    description,
-  };
-}
 export default async function Page({ params }: { params: AnyParams }) {
   const slug = await getSlug(params);
-  const data = await loadCadernoV2(slug);
+  const data = await getCaderno(slug);
 
   const title = (data && (data as unknown as { title?: string }).title) ? (data as unknown as { title: string }).title : slug;
   const meta = (data && (data as unknown as { meta?: unknown }).meta !== undefined) ? (data as unknown as { meta?: unknown }).meta : null;

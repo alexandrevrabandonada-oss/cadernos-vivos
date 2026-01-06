@@ -1,8 +1,6 @@
+import { getCaderno } from "@/lib/cadernos";
 import V2Nav from "@/components/v2/V2Nav";
 import DebateV2 from "@/components/v2/DebateV2";
-import { loadCadernoV2 } from "@/lib/v2";
-import type { Metadata } from "next";
-import { cvReadMetaLoose } from "@/lib/v2/load";
 
 type AnyParams = { slug: string } | Promise<{ slug: string }>;
 
@@ -11,21 +9,9 @@ async function getSlug(params: AnyParams): Promise<string> {
   return (p && p.slug) ? p.slug : "";
 }
 
-
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const meta = await cvReadMetaLoose(params.slug);
-  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
-  const m = meta as unknown as Record<string, unknown>;
-  const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
-  const description = rawDesc.trim().length ? rawDesc.trim() : undefined;
-  return {
-    title: title + " • Cadernos Vivos",
-    description,
-  };
-}
 export default async function Page({ params }: { params: AnyParams }) {
   const slug = await getSlug(params);
-  const caderno = await loadCadernoV2(slug);
+  const caderno = await getCaderno(slug);
   const title = (caderno && (caderno as unknown as { title?: string }).title) ? (caderno as unknown as { title: string }).title : slug;
   return (
     <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto" }}>

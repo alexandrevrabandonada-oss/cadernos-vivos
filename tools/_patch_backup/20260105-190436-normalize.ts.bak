@@ -78,17 +78,3 @@ export function normalizeCadernoV2(input: unknown, fallbackSlug: string): Cadern
 
   return { meta, panoramaMd, referenciasMd, mapa, acervo, debate, registro, aulas };
 }
-
-// CV:B3 normalize helpers
-export function cvAsRecord(v: unknown): Record<string, unknown> | null {
-  if (typeof v !== "object" || v === null) return null;
-  return v as Record<string, unknown>;
-}
-
-export function cvAsArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-
-export function cvAsString(v: unknown, fallback = ""): string {
-  return typeof v === "string" ? v : fallback;
-}

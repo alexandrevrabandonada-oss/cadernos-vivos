@@ -3,11 +3,9 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getCaderno } from "@/lib/cadernos";
 import V2Nav from "@/components/v2/V2Nav";
 import type { Trail, TrailStep } from "@/components/v2/TrilhasV2";
-import { loadCadernoV2 } from "@/lib/v2";
-import type { Metadata } from "next";
-import { cvReadMetaLoose } from "@/lib/v2/load";
 
 type AccentStyle = CSSProperties & Record<"--accent", string>;
 type AnyObj = Record<string, unknown>;
@@ -63,25 +61,13 @@ function trailsFromJson(v: unknown): Trail[] {
   return out;
 }
 
-
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const meta = await cvReadMetaLoose(params.slug);
-  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
-  const m = meta as unknown as Record<string, unknown>;
-  const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
-  const description = rawDesc.trim().length ? rawDesc.trim() : undefined;
-  return {
-    title: title + " • Cadernos Vivos",
-    description,
-  };
-}
 export default async function Page({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const wanted = decodeURIComponent(id);
 
-  let data: Awaited<ReturnType<typeof loadCadernoV2>>;
+  let data: Awaited<ReturnType<typeof getCaderno>>;
   try {
-    data = await loadCadernoV2(slug);
+    data = await getCaderno(slug);
   } catch (e) {
     const err = e as { code?: string };
     if (err && err.code === "ENOENT") return notFound();

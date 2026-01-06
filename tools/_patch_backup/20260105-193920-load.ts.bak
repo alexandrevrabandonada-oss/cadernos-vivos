@@ -1,9 +1,8 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import type { JsonValue, CadernoV2, UiDefault } from "./types";
+import type { JsonValue, CadernoV2 } from "./types";
 import { normalizeCadernoV2 } from "./normalize";
 import { parseMetaLoose, resolveUiDefault, safeJsonParse } from "./contract";
-import { readFile as cvReadFile } from "node:fs/promises";
 
 const CONTENT_ROOT = path.join(process.cwd(), "content", "cadernos");
 
@@ -40,14 +39,14 @@ function cvAsRecord(v: unknown): Record<string, unknown> | null {
 }
 
 function cvCadernoRoot(slug: string): string {
-  return path.join(process.cwd(), "content", "cadernos", slug);
+  return pathP.join(process.cwd(), "content", "cadernos", slug);
 }
 
 export async function cvReadMetaLoose(slug: string): Promise<import("./contract").MetaLoose> {
   const root = cvCadernoRoot(slug);
-  const metaPath = path.join(root, "meta.json");
+  const metaPath = pathP.join(root, "meta.json");
   try {
-    const raw = await cvReadFile(metaPath, "utf8");
+    const raw = await fsP.readFile(metaPath, "utf8");
     return parseMetaLoose(safeJsonParse(raw), slug);
   } catch {
     return parseMetaLoose(null, slug);
@@ -63,7 +62,7 @@ export async function cvResolveUiDefaultForSlug(slug: string): Promise<UiDefault
 
 export async function cvReadOptionalTextAbs(absPath: string): Promise<string | null> {
   try {
-    return await cvReadFile(absPath, "utf8");
+    return await fsP.readFile(absPath, "utf8");
   } catch {
     return null;
   }
@@ -71,6 +70,6 @@ export async function cvReadOptionalTextAbs(absPath: string): Promise<string | n
 
 export async function cvReadOptionalCadernoText(slug: string, relPath: string): Promise<string | null> {
   const root = cvCadernoRoot(slug);
-  const abs = path.join(root, relPath);
+  const abs = pathP.join(root, relPath);
   return cvReadOptionalTextAbs(abs);
 }

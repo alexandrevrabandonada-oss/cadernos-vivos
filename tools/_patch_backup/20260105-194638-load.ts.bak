@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import type { JsonValue, CadernoV2, UiDefault } from "./types";
+import type { JsonValue, CadernoV2 } from "./types";
 import { normalizeCadernoV2 } from "./normalize";
 import { parseMetaLoose, resolveUiDefault, safeJsonParse } from "./contract";
 import { readFile as cvReadFile } from "node:fs/promises";
