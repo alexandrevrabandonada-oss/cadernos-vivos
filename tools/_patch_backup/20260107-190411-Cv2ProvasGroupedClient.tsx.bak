@@ -224,34 +224,6 @@ export function Cv2ProvasGroupedClient(props: Cv2ProvasGroupedClientProps) {
     }
     const payload = ["## MD", "", ...md, "", "---", "", "## TXT", "", ...txt].join("\n");
     copyText(payload);
-    try {
-      const now = new Date();
-      const stamp =
-        String(now.getFullYear()) +
-        String(now.getMonth() + 1).padStart(2, "0") +
-        String(now.getDate()).padStart(2, "0") +
-        "-" +
-        String(now.getHours()).padStart(2, "0") +
-        String(now.getMinutes()).padStart(2, "0") +
-        String(now.getSeconds()).padStart(2, "0");
-    
-      const key = (snap.onlyActive && activeDomain) ? activeDomain : "todos";
-      const safeKey = key.replace(/[^a-z0-9.-]+/gi, "_");
-      const filename = "provas-" + safeKey + "-" + stamp + ".md";
-    
-      const blob = new Blob([payload], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 3000);
-    } catch {
-      // ignore
-    }
   };
 
   return (
