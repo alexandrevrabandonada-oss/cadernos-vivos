@@ -1,0 +1,429 @@
+"use client";
+
+function cv2DownloadText(text: string, filename: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+import { useEffect, useMemo, useRef } from "react";
+import { useSyncExternalStore } from "react";
+
+type LinkItem = { href: string; text: string; domain: string };
+type Group = { domain: string; items: LinkItem[] };
+type Toast = { msg: string; ts: number; kind: "ok" | "err" };
+type Snapshot = {
+  items: LinkItem[];
+  open: Record<string, boolean>;
+  activeDomain: string | null;
+  dedupe: boolean;
+  exportOnlyActive: boolean;
+  lastScan: number;
+  error: string | null;
+  toast: Toast | null;
+};
+
+function createStore() {
+  let snap: Snapshot = { items: [], open: {}, activeDomain: null, dedupe: true, exportOnlyActive: true, lastScan: 0, error: null, toast: null };
+  const listeners = new Set<() => void>();
+  const emit = () => { for (const fn of Array.from(listeners)) fn(); };
+  return {
+    getSnapshot: () => snap,
+    subscribe: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); },
+    set: (patch: Partial<Snapshot>) => { snap = { ...snap, ...patch }; emit(); },
+    setOpen: (key: string, isOpen: boolean) => {
+      const next: Record<string, boolean> = { ...(snap.open || {}) };
+      next[key] = isOpen;
+      snap = { ...snap, open: next };
+      emit();
+    },
+    setAllOpen: (isOpen: boolean, keys: string[]) => {
+      const next: Record<string, boolean> = { ...(snap.open || {}) };
+      for (const k of keys) next[k] = isOpen;
+      snap = { ...snap, open: next };
+      emit();
+    },
+  };
+}
+
+const store = createStore();
+
+function normalizeText(input: unknown): string {
+  const raw = (input == null ? "" : String(input));
+  let out = "";
+  let prevSpace = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    const isSpace = (ch <= " ") || (ch === "\\u00A0");
+    if (isSpace) {
+      if (!prevSpace) { out += " "; prevSpace = true; }
+    } else {
+      out += ch;
+      prevSpace = false;
+    }
+  }
+  return out.trim();
+}
+
+function safeHost(href: string): string {
+  try {
+    const u = new URL(href, window.location.href);
+    const host = (u.hostname || "").toLowerCase();
+    if (!host) return "outros";
+    return host.startsWith("www.") ? host.slice(4) : host;
+  } catch {
+    return "outros";
+  }
+}
+
+function escapeMdText(text: string): string {
+  return text.split("]").join("\\\\]");
+}
+
+function copyText(text: string): boolean {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      void navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function getCtx(): { title: string; slug: string; url: string } {
+  const url = (typeof window !== "undefined" && window.location) ? window.location.href : "";
+  const title = (typeof document !== "undefined" && document.title) ? document.title : "Caderno";
+  let slug = "";
+  try {
+    const p = (typeof window !== "undefined" && window.location) ? window.location.pathname : "";
+    const parts = p.split("/").filter(Boolean);
+    const i = parts.indexOf("c");
+    if (i >= 0 && i + 1 < parts.length) slug = parts[i + 1];
+  } catch {
+    // ignore
+  }
+  return { title, slug, url };
+}
+
+function buildMd(ctx: { title: string; slug: string; url: string }, groups: Group[], activeDomain: string | null, label: string): string {
+  const md: string[] = [];
+  md.push("# Provas — " + ctx.title);
+  md.push("");
+  if (ctx.slug) md.push("> caderno: " + ctx.slug);
+  if (ctx.url) md.push("> link: " + ctx.url);
+  md.push("> export: " + label);
+  if (activeDomain) md.push("> domínio ativo: " + activeDomain);
+  md.push("");
+  for (const g of groups) {
+    md.push("## " + g.domain + " (" + g.items.length + ")");
+    for (const it of g.items) {
+      md.push("- [" + escapeMdText(it.text) + "](" + it.href + ")");
+    }
+    md.push("");
+  }
+  return md.join("\\n");
+}
+
+function buildTxt(ctx: { title: string; slug: string; url: string }, items: LinkItem[], activeDomain: string | null, label: string): string {
+  const out: string[] = [];
+  out.push("Provas — " + ctx.title);
+  if (ctx.url) out.push(ctx.url);
+  out.push("export: " + label);
+  if (activeDomain) out.push("domínio ativo: " + activeDomain);
+  out.push("");
+  for (const it of items) out.push(it.href);
+  return out.join("\\n");
+}
+
+export type Cv2ProvasGroupedClientProps = {
+  rootId: string;
+  listSelector?: string;
+  title?: string;
+};
+
+export function Cv2ProvasGroupedClient(props: Cv2ProvasGroupedClientProps) {
+  const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const scheduledRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  function toast(msg: string, kind: "ok" | "err") {
+    if (toastTimerRef.current != null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    store.set({ toast: { msg, kind, ts: Date.now() } });
+    toastTimerRef.current = window.setTimeout(() => {
+      toastTimerRef.current = null;
+      store.set({ toast: null });
+    }, 1200);
+  }
+
+  const itemsBase: LinkItem[] = useMemo(() => {
+    if (!snap.dedupe) return snap.items;
+    const seen: Record<string, boolean> = {};
+    const out: LinkItem[] = [];
+    for (const it of snap.items) {
+      const key = it.href;
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(it);
+    }
+    return out;
+  }, [snap.items, snap.dedupe]);
+
+  const domainCounts = useMemo(() => {
+    const by: Record<string, number> = {};
+    for (const it of itemsBase) {
+      const k = it.domain || "outros";
+      by[k] = (by[k] || 0) + 1;
+    }
+    return by;
+  }, [itemsBase]);
+
+  const domainsSorted = useMemo(() => Object.keys(domainCounts).sort((a,b) => a.localeCompare(b)), [domainCounts]);
+
+  const itemsFiltered: LinkItem[] = useMemo(() => {
+    if (!snap.activeDomain) return itemsBase;
+    return itemsBase.filter((it) => (it.domain || "outros") === snap.activeDomain);
+  }, [itemsBase, snap.activeDomain]);
+
+  const groupsAll: Group[] = useMemo(() => {
+    const by: Record<string, LinkItem[]> = {};
+    for (const it of itemsBase) {
+      const key = it.domain || "outros";
+      if (!by[key]) by[key] = [];
+      by[key].push(it);
+    }
+    const domains = Object.keys(by).sort((a, b) => a.localeCompare(b));
+    return domains.map((d) => ({ domain: d, items: by[d] }));
+  }, [itemsBase]);
+
+  const groupsFiltered: Group[] = useMemo(() => {
+    const by: Record<string, LinkItem[]> = {};
+    for (const it of itemsFiltered) {
+      const key = it.domain || "outros";
+      if (!by[key]) by[key] = [];
+      by[key].push(it);
+    }
+    const domains = Object.keys(by).sort((a, b) => a.localeCompare(b));
+    return domains.map((d) => ({ domain: d, items: by[d] }));
+  }, [itemsFiltered]);
+
+  const visibleGroups = snap.activeDomain ? groupsFiltered : groupsAll;
+  const domainKeysVisible = useMemo(() => visibleGroups.map((g) => g.domain), [visibleGroups]);
+
+  function scanNow() {
+    try {
+      const rootEl = document.getElementById(props.rootId);
+      if (!rootEl) {
+        store.set({ items: [], lastScan: Date.now(), error: "root_not_found" });
+        return;
+      }
+      const scope = props.listSelector ? (rootEl.querySelector(props.listSelector) as HTMLElement | null) : null;
+      const base = scope || rootEl;
+      const anchors = Array.from(base.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+      const items: LinkItem[] = [];
+      for (const a of anchors) {
+        if (a.closest('[data-cv2-filter-ui="1"]')) continue;
+        if (a.closest('[data-cv2-provas-tools="1"]')) continue;
+        if (a.closest("nav")) continue;
+        const href = a.getAttribute("href") || "";
+        if (!href) continue;
+        const el = a as unknown as HTMLElement;
+        if (el.closest("[hidden]")) continue;
+        try {
+          const cs = window.getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden") continue;
+        } catch {
+          // ignore
+        }
+        const txt = normalizeText(a.textContent || "");
+        const domAttr = normalizeText(a.getAttribute("data-domain") || "");
+        const domain = domAttr.length ? domAttr : safeHost(href);
+        items.push({ href, text: (txt.length ? txt : href), domain });
+      }
+      store.set({ items, lastScan: Date.now(), error: null });
+    } catch {
+      store.set({ items: [], lastScan: Date.now(), error: "scan_failed" });
+    }
+  }
+
+  function scheduleScan() {
+    if (scheduledRef.current != null) {
+      window.clearTimeout(scheduledRef.current);
+      scheduledRef.current = null;
+    }
+    scheduledRef.current = window.setTimeout(() => {
+      scheduledRef.current = null;
+      scanNow();
+    }, 60);
+  }
+
+  useEffect(() => {
+    scheduleScan();
+    const rootEl = document.getElementById(props.rootId);
+    if (!rootEl) return;
+    const onAny = () => scheduleScan();
+    rootEl.addEventListener("input", onAny, true);
+    rootEl.addEventListener("change", onAny, true);
+    rootEl.addEventListener("click", onAny, true);
+    return () => {
+      rootEl.removeEventListener("input", onAny, true);
+      rootEl.removeEventListener("change", onAny, true);
+      rootEl.removeEventListener("click", onAny, true);
+    };
+  }, [props.rootId, props.listSelector]);
+
+  const headerTitle = props.title || "Por domínio";
+  const totalAll = itemsBase.length;
+  const totalRaw = snap.items.length;
+
+  const exportLabel = snap.exportOnlyActive ? "somente domínio ativo (se houver)" : "tudo (ignora domínio ativo)";
+  const exportGroups = snap.exportOnlyActive ? groupsFiltered : groupsAll;
+  const exportItems  = snap.exportOnlyActive ? itemsFiltered : itemsBase;
+  const exportActive = snap.exportOnlyActive ? snap.activeDomain : null;
+
+  return (
+    <div data-cv2-provas-tools="1" className="cv2-card" style={{ marginTop: 12 }}>
+      <div className="cv2-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontWeight: 700 }}>{headerTitle}</div>
+        <div className="cv2-muted" style={{ fontSize: 12 }}>
+          {totalAll} links{snap.dedupe ? " (dedupe)" : ""} <span style={{ opacity: 0.7 }}>· raw {totalRaw}</span>
+        </div>
+        <div style={{ marginLeft: "auto" }} />
+        <button type="button" className={"cv2-chip" + (snap.dedupe ? " is-active" : "")} onClick={() => store.set({ dedupe: !snap.dedupe })}>Deduplicar</button>
+        <button type="button" className={"cv2-chip" + (snap.exportOnlyActive ? " is-active" : "")} onClick={() => store.set({ exportOnlyActive: !snap.exportOnlyActive })}>Somente domínio ativo</button>
+        <button type="button" className="cv2-chip" onClick={() => store.setAllOpen(true, domainKeysVisible)}>Expandir</button>
+        <button type="button" className="cv2-chip" onClick={() => store.setAllOpen(false, domainKeysVisible)}>Colapsar</button>
+        <button type="button" className="cv2-chip" onClick={() => {
+          const ctx = getCtx();
+          const md = buildMd(ctx, groupsFiltered, snap.activeDomain, "respeita domínio ativo");
+          const ok = copyText(md);
+          toast(ok ? "Copiado (MD)" : "Falha ao copiar", ok ? "ok" : "err");
+        }}>Copiar (MD)</button>
+        <button type="button" className="cv2-chip" onClick={() => {
+          const ctx = getCtx();
+          const txt = buildTxt(ctx, itemsFiltered, snap.activeDomain, "respeita domínio ativo");
+          const ok = copyText(txt);
+          toast(ok ? "Copiado (TXT)" : "Falha ao copiar", ok ? "ok" : "err");
+        }}>Copiar links (TXT)</button>
+        <button type="button" className="cv2-chip" onClick={() => {
+          const ctx = getCtx();
+          const md = buildMd(ctx, exportGroups, exportActive, exportLabel);
+          const txt = buildTxt(ctx, exportItems, exportActive, exportLabel);
+          const block: string[] = [];
+          block.push("===== PROVAS (MD) =====");
+          block.push(md);
+          block.push("");
+          block.push("===== LINKS (TXT) =====");
+          block.push(txt);
+          const ok = copyText(block.join("\\n"));
+          toast(ok ? "Exportado (bloco)" : "Falha ao exportar", ok ? "ok" : "err");
+        }}>Exportar bloco</button>
+<button
+  type="button"
+  className="cv2-btn"
+  onClick={async () => {
+    try {
+      const txt = await navigator.clipboard.readText();
+      if (!txt || !txt.trim()) {
+        alert("Clipboard vazio. Clique em 'Exportar bloco' primeiro.");
+        return;
+      }
+      const d = new Date();
+      const y = String(d.getFullYear());
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const da = String(d.getDate()).padStart(2, "0");
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      const stamp = y + m + da + "-" + hh + mm;
+      cv2DownloadText(txt, "cv2-provas-export-" + stamp + ".md");
+    } catch (err) {
+      console.error(err);
+      alert("Não consegui ler o clipboard. Dica: clique em 'Exportar bloco' e cole num arquivo manualmente.");
+    }
+  }}
+>
+  Baixar payload (.md)
+</button>
+
+      </div>
+
+      {domainsSorted.length ? (
+        <div className="cv2-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <button
+            type="button"
+            className={"cv2-chip" + (!snap.activeDomain ? " is-active" : "")}
+            onClick={() => store.set({ activeDomain: null })}
+          >
+            Todos ({totalAll})
+          </button>
+          {domainsSorted.map((d) => (
+            <button
+              key={d}
+              type="button"
+              className={"cv2-chip" + (snap.activeDomain === d ? " is-active" : "")}
+              onClick={() => store.set({ activeDomain: (snap.activeDomain === d ? null : d) })}
+              title={d}
+            >
+              {d} ({domainCounts[d] || 0})
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: 10 }}>
+        {visibleGroups.map((g) => {
+          const isOpen = (snap.open && typeof snap.open[g.domain] === "boolean") ? snap.open[g.domain] : true;
+          return (
+            <details
+              key={g.domain}
+              open={isOpen}
+              onToggle={(e) => {
+                const det = e.currentTarget as HTMLDetailsElement;
+                store.setOpen(g.domain, det.open);
+              }}
+              className="cv2-details"
+            >
+              <summary className="cv2-summary">
+                <span style={{ fontWeight: 650 }}>{g.domain}</span>
+                <span className="cv2-muted" style={{ marginLeft: 8, fontSize: 12 }}>{g.items.length}</span>
+              </summary>
+              <ul className="cv2-list">
+                {g.items.map((it) => (
+                  <li key={it.href} className="cv2-li">
+                    <a className="cv2-link" href={it.href} target="_blank" rel="noreferrer">{it.text}</a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          );
+        })}
+      </div>
+
+      {snap.error ? <div className="cv2-muted" style={{ marginTop: 10, fontSize: 12 }}>scan: {snap.error}</div> : null}
+      {snap.toast ? <div className="cv2-toast" data-kind={snap.toast.kind}>{snap.toast.msg}</div> : null}
+    </div>
+  );
+}

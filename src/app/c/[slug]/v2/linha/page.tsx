@@ -12,9 +12,10 @@ async function getSlug(params: AnyParams): Promise<string> {
 }
 
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const meta = await cvReadMetaLoose(params.slug);
-  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const slug = await getSlug(params);
+  const meta = await cvReadMetaLoose(slug);
+  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : slug;
   const m = meta as unknown as Record<string, unknown>;
   const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
   const description = rawDesc.trim().length ? rawDesc.trim() : undefined;

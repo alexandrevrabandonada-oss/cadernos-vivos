@@ -1,0 +1,112 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+type Props = {
+  rootId: string;
+  placeholder?: string;
+};
+
+type Stats = { total: number; shown: number };
+
+function foldText(s: string): string {
+  const raw = (s ?? "").toString();
+  try {
+    return raw
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  } catch {
+    return raw.toLowerCase();
+  }
+}
+
+function collectItems(root: HTMLElement): HTMLElement[] {
+  const pick = (sel: string) =>
+    Array.from(root.querySelectorAll<HTMLElement>(sel)).filter(
+      (el) => !el.closest("[data-cv2-filter-ui=\\"1\\"]")
+    );
+
+  const candidates = [".cv2-card", "[data-cv2-card]", "article", "li"];
+  for (const sel of candidates) {
+    const got = pick(sel);
+    if (got.length > 0) return got;
+  }
+  return [];
+}
+
+export function Cv2DomFilterClient({ rootId, placeholder }: Props) {
+  const [query, setQuery] = useState<string>("");
+  const [stats, setStats] = useState<Stats>({ total: 0, shown: 0 });
+  const itemsRef = useRef<HTMLElement[]>([]);
+
+  useEffect(() => {
+    const root = document.getElementById(rootId);
+    if (!root) {
+      itemsRef.current = [];
+      setStats({ total: 0, shown: 0 });
+      return;
+    }
+    const items = collectItems(root);
+    itemsRef.current = items;
+    setStats({ total: items.length, shown: items.length });
+  }, [rootId]);
+
+  useEffect(() => {
+    const items = itemsRef.current;
+    if (items.length === 0) {
+      setStats({ total: 0, shown: 0 });
+      return;
+    }
+    const q = foldText(query.trim());
+    let shown = 0;
+    for (const el of items) {
+      const hay = foldText(el.textContent ?? "");
+      const ok = q.length === 0 ? true : hay.includes(q);
+      el.hidden = !ok;
+      if (ok) shown += 1;
+    }
+    setStats({ total: items.length, shown });
+  }, [query]);
+
+  const canClear = query.trim().length > 0;
+
+  return (
+    <div
+      data-cv2-filter-ui="1"
+      style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", margin: "10px 0 14px" }}
+    >
+      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="cv2-muted" style={{ fontSize: 12 }}>filtrar</span>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder ?? "buscar..."}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid var(--cv2-line, rgba(255,255,255,.10))",
+            background: "rgba(0,0,0,.22)",
+            color: "inherit",
+            outline: "none",
+            minWidth: 220,
+          }}
+        />
+      </label>
+
+      {canClear ? (
+        <button
+          type="button"
+          onClick={() => setQuery("")}
+          className="cv2-chip"
+          style={{ cursor: "pointer" }}
+        >
+          limpar
+        </button>
+      ) : null}
+
+      <span className="cv2-muted" style={{ fontSize: 12 }}>{stats.shown}/{stats.total}</span>
+    </div>
+  );
+}

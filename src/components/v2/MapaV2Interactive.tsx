@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import fs from "node:fs/promises";
 import path from "node:path";
 import MapaV2Client from "@/components/v2/MapaV2Client";
+import { Cv2MapNavPinsClient } from "./Cv2MapNavPinsClient";
 
 type AnyObj = Record<string, unknown>;
 
@@ -34,6 +35,7 @@ export default async function MapaV2Interactive(props: { slug: string; title?: s
 
   return (
     <div style={wrap}>
+      <Cv2MapNavPinsClient />
       <MapaV2Client slug={slug} title={title} mapa={mapa && (isObj(mapa) || Array.isArray(mapa) ? mapa : null)} rawText={rawText} />
     </div>
   );

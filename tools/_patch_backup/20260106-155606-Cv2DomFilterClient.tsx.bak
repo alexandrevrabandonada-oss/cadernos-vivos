@@ -1,0 +1,199 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+
+type Stats = { total: number; shown: number };
+
+function foldText(input: unknown): string {
+  const raw = input == null ? "" : String(input);
+  const lower = raw.toLowerCase();
+  try {
+    // remove acentos de forma segura (sem regex unicode fancy)
+    return lower.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  } catch {
+    return lower;
+  }
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function findScope(root: HTMLDivElement | null): HTMLElement | null {
+  if (!root) return null;
+  const parent = root.parentElement;
+  if (!parent) return null;
+  // 1) se tiver um escopo marcado, usa
+  const marked = parent.querySelector<HTMLElement>("[data-cv2-filter-scope]");
+  if (marked) return marked;
+  // 2) senão tenta o próximo irmão (caso o filtro esteja “solto” acima da lista)
+  const next = root.nextElementSibling as HTMLElement | null;
+  if (next) return next;
+  // 3) fallback: o pai (último recurso)
+  return parent;
+}
+
+function collectLinks(scope: HTMLElement | null): Array<{ href: string; text: string }> {
+  if (!scope) return [];
+  const anchors = Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href]"));
+  const seen = new Set<string>();
+  const out: Array<{ href: string; text: string }> = [];
+  for (const a of anchors) {
+    const href = a.getAttribute("href") || "";
+    if (!href) continue;
+    if (href.startsWith("#")) continue;
+    if (seen.has(href)) continue;
+    seen.add(href);
+    const text = (a.textContent || "").trim();
+    out.push({ href, text });
+  }
+  return out;
+}
+
+function findItemRoot(anchor: HTMLAnchorElement, scope: HTMLElement): HTMLElement {
+  const li = anchor.closest("li");
+  if (li && scope.contains(li)) return li as HTMLElement;
+  const art = anchor.closest("article");
+  if (art && scope.contains(art)) return art as HTMLElement;
+  const sec = anchor.closest("section");
+  if (sec && scope.contains(sec)) return sec as HTMLElement;
+  const div = anchor.closest("div");
+  if (div && scope.contains(div)) return div as HTMLElement;
+  return anchor;
+}
+
+export default function Cv2DomFilterClient(props: {
+  children?: ReactNode;
+  label?: string;
+  placeholder?: string;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [q, setQ] = useState<string>("");
+  const [stats, setStats] = useState<Stats>({ total: 0, shown: 0 });
+  const [toast, setToast] = useState<string>("");
+
+  const label = props.label || "Filtrar provas";
+  const placeholder = props.placeholder || "Digite para filtrar…";
+
+  const qFold = useMemo(() => foldText(q).trim(), [q]);
+
+  useEffect(() => {
+    const scope = contentRef.current || findScope(rootRef.current);
+    if (!scope) return;
+
+    const anchors = Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href]"));
+    const roots: HTMLElement[] = [];
+    for (const a of anchors) {
+      roots.push(findItemRoot(a, scope));
+    }
+
+    // unique roots (por referência)
+    const uniq: HTMLElement[] = [];
+    const seen = new Set<HTMLElement>();
+    for (const r of roots) {
+      if (!seen.has(r)) {
+        seen.add(r);
+        uniq.push(r);
+      }
+    }
+
+    let shown = 0;
+    for (const el of uniq) {
+      const hay = foldText(el.textContent || "");
+      const ok = qFold.length === 0 ? true : hay.includes(qFold);
+      if (ok) {
+        el.removeAttribute("hidden");
+        shown += 1;
+      } else {
+        el.setAttribute("hidden", "");
+      }
+    }
+    setStats({ total: uniq.length, shown });
+  }, [qFold]);
+
+  async function doCopy(kind: "plain" | "md") {
+    const scope = contentRef.current || findScope(rootRef.current);
+    const links = collectLinks(scope);
+    let text = "";
+
+    if (kind === "plain") {
+      text = links.map((l) => l.href).join("\\n");
+    } else {
+      text = links
+        .map((l) => {
+          const t0 = l.text ? l.text : l.href;
+          const t = t0.replace(/\\s+/g, " ").trim();
+          return "- [" + t + "](" + l.href + ")";
+        })
+        .join("\\n");
+    }
+
+    const ok = await copyToClipboard(text);
+    setToast(ok ? "Copiado!" : "Falhou ao copiar");
+    window.setTimeout(() => setToast(""), 1200);
+  }
+
+  return (
+    <div ref={rootRef} className="cv2-domfilter" data-cv2-filter-ui="1">
+      <div className="cv2-domfilter__row">
+        <label className="cv2-domfilter__label">
+          <span className="cv2-domfilter__labelText">{label}</span>
+          <input
+            className="cv2-domfilter__input"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={placeholder}
+            aria-label={label}
+          />
+        </label>
+        <button
+          type="button"
+          className="cv2-domfilter__btn"
+          onClick={() => setQ("")}
+          disabled={q.length === 0}
+        >
+          Limpar
+        </button>
+        <button type="button" className="cv2-domfilter__btn" onClick={() => void doCopy("plain")}>
+          Copiar links
+        </button>
+        <button type="button" className="cv2-domfilter__btn" onClick={() => void doCopy("md")}>
+          Copiar MD
+        </button>
+      </div>
+      <div className="cv2-domfilter__meta" aria-live="polite">
+        <span className="cv2-domfilter__count">{stats.shown}/{stats.total}</span>
+        {toast ? <span className="cv2-domfilter__toast">{toast}</span> : null}
+      </div>
+      {props.children ? (
+        <div ref={contentRef} data-cv2-filter-scope>
+          {props.children}
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -1,0 +1,34 @@
+[OK] Guard V2 passou.
+[RUN] C:\Program Files\nodejs\npm.cmd run lint
+
+> cadernos-vivos@0.1.0 lint
+> eslint
+
+[RUN] C:\Program Files\nodejs\npm.cmd run build
+
+> cadernos-vivos@0.1.0 build
+> next build
+
+Ôû▓ Next.js 16.1.1 (Turbopack)
+
+  Creating an optimized production build ...
+Ô£ô Compiled successfully in 2.4s
+  Running TypeScript ...
+Failed to compile.
+
+./src/app/c/[slug]/v2/linha-do-tempo/page.tsx:15:32
+Type error: Property 'slug' does not exist on type '{}'.
+
+  13 |   } catch {
+  14 |     const p = params as unknown;
+> 15 |     const slug = p && typeof p.slug === "string" ? p.slug : "";
+     |                                ^
+  16 |     return slug;
+  17 |   }
+  18 | }
+Next.js build worker exited with code: 1 and signal: null
+Exception: C:\Projetos\Cadernos Vivos\cadernos-vivos\tools\_bootstrap.ps1:41
+Line |
+  41 |  . DE -ne 0) { throw ('[STOP] falhou (exit ' + $LASTEXITCODE + '): ' + $ .
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | [STOP] falhou (exit 1): C:\Program Files\nodejs\npm.cmd run build

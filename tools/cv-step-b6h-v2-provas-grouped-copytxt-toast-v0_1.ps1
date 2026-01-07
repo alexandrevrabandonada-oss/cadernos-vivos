@@ -1,0 +1,468 @@
+param([switch]$OpenReport)
+
+$ErrorActionPreference = "Stop"
+
+function EnsureDirLocal([string]$p) {
+  if ([string]::IsNullOrWhiteSpace($p)) { return }
+  if (!(Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Force -Path $p | Out-Null }
+}
+function WriteUtf8NoBomLocal([string]$filePath, [string]$content) {
+  $enc = New-Object System.Text.UTF8Encoding($false)
+  $dir = Split-Path -Parent $filePath
+  if ($dir) { EnsureDirLocal $dir }
+  [IO.File]::WriteAllText($filePath, $content, $enc)
+}
+function BackupFileLocal([string]$root, [string]$filePath) {
+  if (!(Test-Path -LiteralPath $filePath)) { return $null }
+  $stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
+  $bkDir = Join-Path $root "tools\_patch_backup"
+  EnsureDirLocal $bkDir
+  $leaf = Split-Path -Leaf $filePath
+  $dest = Join-Path $bkDir ($stamp + "-" + $leaf + ".bak")
+  Copy-Item -LiteralPath $filePath -Destination $dest -Force
+  return $dest
+}
+function RelLocal([string]$root, [string]$fullPath) {
+  try {
+    $rp = (Resolve-Path -LiteralPath $fullPath).Path
+    $rr = $root.TrimEnd("\","/")
+    if ($rp.StartsWith($rr)) { return $rp.Substring($rr.Length).TrimStart("\","/") }
+    return $rp
+  } catch { return $fullPath }
+}
+
+# root (fallback se $PSScriptRoot vier vazio)
+$base = if ($PSScriptRoot -and $PSScriptRoot.Trim().Length -gt 0) { $PSScriptRoot } else { (Get-Location).Path }
+$root = (Resolve-Path (Join-Path $base "..")).Path
+
+$stamp = (Get-Date).ToString("yyyyMMdd-HHmmss")
+$step = "cv-step-b6h-v2-provas-grouped-copytxt-toast-v0_1"
+
+Write-Host ("== " + $step + " == " + $stamp)
+Write-Host ("[DIAG] Root: " + $root)
+
+$compRel = "src\components\v2\Cv2ProvasGroupedClient.tsx"
+$comp    = Join-Path $root $compRel
+$cssRel  = "src\app\globals.css"
+$css     = Join-Path $root $cssRel
+
+if (!(Test-Path -LiteralPath $comp)) { throw ("[STOP] componente não encontrado: " + $compRel) }
+if (!(Test-Path -LiteralPath $css))  { throw ("[STOP] globals.css não encontrado: " + $cssRel) }
+
+# -----------------------
+# PATCH 1) rewrite component (B6g + heading MD/TXT + toast)
+# -----------------------
+$bk1 = BackupFileLocal $root $comp
+
+$lines = @(
+  '"use client";',
+  '',
+  'import { useEffect, useMemo, useRef } from "react";',
+  'import { useSyncExternalStore } from "react";',
+  '',
+  'type LinkItem = { href: string; text: string; domain: string };',
+  'type Group = { domain: string; items: LinkItem[] };',
+  'type Toast = { msg: string; ts: number; kind: "ok" | "err" };',
+  'type Snapshot = {',
+  '  items: LinkItem[];',
+  '  open: Record<string, boolean>;',
+  '  activeDomain: string | null;',
+  '  dedupe: boolean;',
+  '  lastScan: number;',
+  '  error: string | null;',
+  '  toast: Toast | null;',
+  '};',
+  '',
+  'function createStore() {',
+  '  let snap: Snapshot = { items: [], open: {}, activeDomain: null, dedupe: true, lastScan: 0, error: null, toast: null };',
+  '  const listeners = new Set<() => void>();',
+  '  const emit = () => { for (const fn of Array.from(listeners)) fn(); };',
+  '  return {',
+  '    getSnapshot: () => snap,',
+  '    subscribe: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); },',
+  '    set: (patch: Partial<Snapshot>) => { snap = { ...snap, ...patch }; emit(); },',
+  '    setOpen: (key: string, isOpen: boolean) => {',
+  '      const next: Record<string, boolean> = { ...(snap.open || {}) };',
+  '      next[key] = isOpen;',
+  '      snap = { ...snap, open: next };',
+  '      emit();',
+  '    },',
+  '    setAllOpen: (isOpen: boolean, keys: string[]) => {',
+  '      const next: Record<string, boolean> = { ...(snap.open || {}) };',
+  '      for (const k of keys) next[k] = isOpen;',
+  '      snap = { ...snap, open: next };',
+  '      emit();',
+  '    },',
+  '  };',
+  '}',
+  '',
+  'const store = createStore();',
+  '',
+  'function normalizeText(input: unknown): string {',
+  '  const raw = (input == null ? "" : String(input));',
+  '  let out = "";',
+  '  let prevSpace = false;',
+  '  for (let i = 0; i < raw.length; i++) {',
+  '    const ch = raw[i];',
+  '    const isSpace = (ch <= " ") || (ch === "\\u00A0");',
+  '    if (isSpace) {',
+  '      if (!prevSpace) { out += " "; prevSpace = true; }',
+  '    } else {',
+  '      out += ch;',
+  '      prevSpace = false;',
+  '    }',
+  '  }',
+  '  return out.trim();',
+  '}',
+  '',
+  'function safeHost(href: string): string {',
+  '  try {',
+  '    const u = new URL(href, window.location.href);',
+  '    const host = (u.hostname || "").toLowerCase();',
+  '    if (!host) return "outros";',
+  '    return host.startsWith("www.") ? host.slice(4) : host;',
+  '  } catch {',
+  '    return "outros";',
+  '  }',
+  '}',
+  '',
+  'function escapeMdText(text: string): string {',
+  '  return text.split("]").join("\\\\]");',
+  '}',
+  '',
+  'function copyText(text: string): boolean {',
+  '  try {',
+  '    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {',
+  '      void navigator.clipboard.writeText(text);',
+  '      return true;',
+  '    }',
+  '  } catch {',
+  '    // ignore',
+  '  }',
+  '  try {',
+  '    const ta = document.createElement("textarea");',
+  '    ta.value = text;',
+  '    ta.style.position = "fixed";',
+  '    ta.style.opacity = "0";',
+  '    document.body.appendChild(ta);',
+  '    ta.focus();',
+  '    ta.select();',
+  '    const ok = document.execCommand("copy");',
+  '    document.body.removeChild(ta);',
+  '    return ok;',
+  '  } catch {',
+  '    return false;',
+  '  }',
+  '}',
+  '',
+  'function getCtx(): { title: string; slug: string; url: string } {',
+  '  const url = (typeof window !== "undefined" && window.location) ? window.location.href : "";',
+  '  const title = (typeof document !== "undefined" && document.title) ? document.title : "Caderno";',
+  '  let slug = "";',
+  '  try {',
+  '    const p = (typeof window !== "undefined" && window.location) ? window.location.pathname : "";',
+  '    const parts = p.split("/").filter(Boolean);',
+  '    const i = parts.indexOf("c");',
+  '    if (i >= 0 && i + 1 < parts.length) slug = parts[i + 1];',
+  '  } catch {',
+  '    // ignore',
+  '  }',
+  '  return { title, slug, url };',
+  '}',
+  '',
+  'export type Cv2ProvasGroupedClientProps = {',
+  '  rootId: string;',
+  '  listSelector?: string;',
+  '  title?: string;',
+  '};',
+  '',
+  'export function Cv2ProvasGroupedClient(props: Cv2ProvasGroupedClientProps) {',
+  '  const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);',
+  '  const scheduledRef = useRef<number | null>(null);',
+  '  const toastTimerRef = useRef<number | null>(null);',
+  '',
+  '  function toast(msg: string, kind: "ok" | "err") {',
+  '    if (toastTimerRef.current != null) {',
+  '      window.clearTimeout(toastTimerRef.current);',
+  '      toastTimerRef.current = null;',
+  '    }',
+  '    store.set({ toast: { msg, kind, ts: Date.now() } });',
+  '    toastTimerRef.current = window.setTimeout(() => {',
+  '      toastTimerRef.current = null;',
+  '      store.set({ toast: null });',
+  '    }, 1200);',
+  '  }',
+  '',
+  '  const itemsBase: LinkItem[] = useMemo(() => {',
+  '    if (!snap.dedupe) return snap.items;',
+  '    const seen: Record<string, boolean> = {};',
+  '    const out: LinkItem[] = [];',
+  '    for (const it of snap.items) {',
+  '      const key = it.href;',
+  '      if (seen[key]) continue;',
+  '      seen[key] = true;',
+  '      out.push(it);',
+  '    }',
+  '    return out;',
+  '  }, [snap.items, snap.dedupe]);',
+  '',
+  '  const domainCounts = useMemo(() => {',
+  '    const by: Record<string, number> = {};',
+  '    for (const it of itemsBase) {',
+  '      const k = it.domain || "outros";',
+  '      by[k] = (by[k] || 0) + 1;',
+  '    }',
+  '    return by;',
+  '  }, [itemsBase]);',
+  '',
+  '  const domainsSorted = useMemo(() => Object.keys(domainCounts).sort((a,b) => a.localeCompare(b)), [domainCounts]);',
+  '',
+  '  const itemsFiltered: LinkItem[] = useMemo(() => {',
+  '    if (!snap.activeDomain) return itemsBase;',
+  '    return itemsBase.filter((it) => (it.domain || "outros") === snap.activeDomain);',
+  '  }, [itemsBase, snap.activeDomain]);',
+  '',
+  '  const groups: Group[] = useMemo(() => {',
+  '    const by: Record<string, LinkItem[]> = {};',
+  '    for (const it of itemsFiltered) {',
+  '      const key = it.domain || "outros";',
+  '      if (!by[key]) by[key] = [];',
+  '      by[key].push(it);',
+  '    }',
+  '    const domains = Object.keys(by).sort((a, b) => a.localeCompare(b));',
+  '    return domains.map((d) => ({ domain: d, items: by[d] }));',
+  '  }, [itemsFiltered]);',
+  '',
+  '  const domainKeysVisible = useMemo(() => groups.map((g) => g.domain), [groups]);',
+  '',
+  '  function scanNow() {',
+  '    try {',
+  '      const rootEl = document.getElementById(props.rootId);',
+  '      if (!rootEl) {',
+  '        store.set({ items: [], lastScan: Date.now(), error: "root_not_found" });',
+  '        return;',
+  '      }',
+  '      const scope = props.listSelector ? (rootEl.querySelector(props.listSelector) as HTMLElement | null) : null;',
+  '      const base = scope || rootEl;',
+  '      const anchors = Array.from(base.querySelectorAll("a[href]")) as HTMLAnchorElement[];',
+  '      const items: LinkItem[] = [];',
+  '      for (const a of anchors) {',
+  '        if (a.closest(''[data-cv2-filter-ui="1"]'')) continue;',
+  '        if (a.closest(''[data-cv2-provas-tools="1"]'')) continue;',
+  '        if (a.closest("nav")) continue;',
+  '        const href = a.getAttribute("href") || "";',
+  '        if (!href) continue;',
+  '        const el = a as unknown as HTMLElement;',
+  '        if (el.closest("[hidden]")) continue;',
+  '        try {',
+  '          const cs = window.getComputedStyle(el);',
+  '          if (cs.display === "none" || cs.visibility === "hidden") continue;',
+  '        } catch {',
+  '          // ignore',
+  '        }',
+  '        const txt = normalizeText(a.textContent || "");',
+  '        const domAttr = normalizeText(a.getAttribute("data-domain") || "");',
+  '        const domain = domAttr.length ? domAttr : safeHost(href);',
+  '        items.push({ href, text: (txt.length ? txt : href), domain });',
+  '      }',
+  '      store.set({ items, lastScan: Date.now(), error: null });',
+  '    } catch {',
+  '      store.set({ items: [], lastScan: Date.now(), error: "scan_failed" });',
+  '    }',
+  '  }',
+  '',
+  '  function scheduleScan() {',
+  '    if (scheduledRef.current != null) {',
+  '      window.clearTimeout(scheduledRef.current);',
+  '      scheduledRef.current = null;',
+  '    }',
+  '    scheduledRef.current = window.setTimeout(() => {',
+  '      scheduledRef.current = null;',
+  '      scanNow();',
+  '    }, 60);',
+  '  }',
+  '',
+  '  useEffect(() => {',
+  '    scheduleScan();',
+  '    const rootEl = document.getElementById(props.rootId);',
+  '    if (!rootEl) return;',
+  '    const onAny = () => scheduleScan();',
+  '    rootEl.addEventListener("input", onAny, true);',
+  '    rootEl.addEventListener("change", onAny, true);',
+  '    rootEl.addEventListener("click", onAny, true);',
+  '    return () => {',
+  '      rootEl.removeEventListener("input", onAny, true);',
+  '      rootEl.removeEventListener("change", onAny, true);',
+  '      rootEl.removeEventListener("click", onAny, true);',
+  '    };',
+  '  }, [props.rootId, props.listSelector]);',
+  '',
+  '  const headerTitle = props.title || "Por domínio";',
+  '  const totalAll = itemsBase.length;',
+  '  const totalRaw = snap.items.length;',
+  '',
+  '  return (',
+  '    <div data-cv2-provas-tools="1" className="cv2-card" style={{ marginTop: 12 }}>',
+  '      <div className="cv2-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>',
+  '        <div style={{ fontWeight: 700 }}>{headerTitle}</div>',
+  '        <div className="cv2-muted" style={{ fontSize: 12 }}>',
+  '          {totalAll} links{snap.dedupe ? " (dedupe)" : ""} <span style={{ opacity: 0.7 }}>· raw {totalRaw}</span>',
+  '        </div>',
+  '        <div style={{ marginLeft: "auto" }} />',
+  '        <button type="button" className={"cv2-chip" + (snap.dedupe ? " is-active" : "")} onClick={() => store.set({ dedupe: !snap.dedupe })}>Deduplicar</button>',
+  '        <button type="button" className="cv2-chip" onClick={() => store.setAllOpen(true, domainKeysVisible)}>Expandir</button>',
+  '        <button type="button" className="cv2-chip" onClick={() => store.setAllOpen(false, domainKeysVisible)}>Colapsar</button>',
+  '        <button type="button" className="cv2-chip" onClick={() => {',
+  '          const ctx = getCtx();',
+  '          const md: string[] = [];',
+  '          md.push("# Provas — " + ctx.title);',
+  '          md.push("");',
+  '          if (ctx.slug) md.push("> caderno: " + ctx.slug);',
+  '          if (ctx.url) md.push("> link: " + ctx.url);',
+  '          if (snap.activeDomain) md.push("> filtro: " + snap.activeDomain);',
+  '          md.push("");',
+  '          for (const g of groups) {',
+  '            md.push("## " + g.domain + " (" + g.items.length + ")");',
+  '            for (const it of g.items) {',
+  '              md.push("- [" + escapeMdText(it.text) + "](" + it.href + ")");',
+  '            }',
+  '            md.push("");',
+  '          }',
+  '          const ok = copyText(md.join("\\n"));',
+  '          toast(ok ? "Copiado (MD)" : "Falha ao copiar", ok ? "ok" : "err");',
+  '        }}>Copiar (MD)</button>',
+  '        <button type="button" className="cv2-chip" onClick={() => {',
+  '          const ctx = getCtx();',
+  '          const out: string[] = [];',
+  '          out.push("Provas — " + ctx.title);',
+  '          if (ctx.url) out.push(ctx.url);',
+  '          if (snap.activeDomain) out.push("filtro: " + snap.activeDomain);',
+  '          out.push("");',
+  '          for (const it of itemsFiltered) {',
+  '            out.push(it.href);',
+  '          }',
+  '          const ok = copyText(out.join("\\n"));',
+  '          toast(ok ? "Copiado (TXT)" : "Falha ao copiar", ok ? "ok" : "err");',
+  '        }}>Copiar links (TXT)</button>',
+  '      </div>',
+  '',
+  '      {domainsSorted.length ? (',
+  '        <div className="cv2-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>',
+  '          <button',
+  '            type="button"',
+  '            className={"cv2-chip" + (!snap.activeDomain ? " is-active" : "")}',
+  '            onClick={() => store.set({ activeDomain: null })}',
+  '          >',
+  '            Todos ({totalAll})',
+  '          </button>',
+  '          {domainsSorted.map((d) => (',
+  '            <button',
+  '              key={d}',
+  '              type="button"',
+  '              className={"cv2-chip" + (snap.activeDomain === d ? " is-active" : "")}',
+  '              onClick={() => store.set({ activeDomain: (snap.activeDomain === d ? null : d) })}',
+  '              title={d}',
+  '            >',
+  '              {d} ({domainCounts[d] || 0})',
+  '            </button>',
+  '          ))}',
+  '        </div>',
+  '      ) : null}',
+  '',
+  '      <div style={{ marginTop: 10 }}>',
+  '        {groups.map((g) => {',
+  '          const isOpen = (snap.open && typeof snap.open[g.domain] === "boolean") ? snap.open[g.domain] : true;',
+  '          return (',
+  '            <details',
+  '              key={g.domain}',
+  '              open={isOpen}',
+  '              onToggle={(e) => {',
+  '                const det = e.currentTarget as HTMLDetailsElement;',
+  '                store.setOpen(g.domain, det.open);',
+  '              }}',
+  '              className="cv2-details"',
+  '            >',
+  '              <summary className="cv2-summary">',
+  '                <span style={{ fontWeight: 650 }}>{g.domain}</span>',
+  '                <span className="cv2-muted" style={{ marginLeft: 8, fontSize: 12 }}>{g.items.length}</span>',
+  '              </summary>',
+  '              <ul className="cv2-list">',
+  '                {g.items.map((it) => (',
+  '                  <li key={it.href} className="cv2-li">',
+  '                    <a className="cv2-link" href={it.href} target="_blank" rel="noreferrer">{it.text}</a>',
+  '                  </li>',
+  '                ))}',
+  '              </ul>',
+  '            </details>',
+  '          );',
+  '        })}',
+  '      </div>',
+  '',
+  '      {snap.error ? <div className="cv2-muted" style={{ marginTop: 10, fontSize: 12 }}>scan: {snap.error}</div> : null}',
+  '      {snap.toast ? <div className="cv2-toast" data-kind={snap.toast.kind}>{snap.toast.msg}</div> : null}',
+  '    </div>',
+  '  );',
+  '}'
+)
+
+WriteUtf8NoBomLocal $comp ($lines -join "`n")
+Write-Host ("[PATCH] wrote -> " + (RelLocal $root $comp))
+if ($bk1) { Write-Host ("[BK] " + (RelLocal $root $bk1)) }
+
+# -----------------------
+# PATCH 2) globals.css additive: toast style
+# -----------------------
+$cssRaw = Get-Content -Raw -LiteralPath $css
+$marker = "/* CV2 Provas toast */"
+if ($cssRaw -notmatch [regex]::Escape($marker)) {
+  $bk2 = BackupFileLocal $root $css
+  $add = @(
+    "",
+    $marker,
+    ".cv2-toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 10px 12px; border-radius: 999px; background: rgba(0,0,0,0.78); border: 1px solid rgba(255,255,255,0.14); font-size: 13px; z-index: 9999; pointer-events: none; }"
+  ) -join "`n"
+  WriteUtf8NoBomLocal $css ($cssRaw + $add)
+  Write-Host ("[PATCH] css -> " + (RelLocal $root $css))
+  if ($bk2) { Write-Host ("[BK] " + (RelLocal $root $bk2)) }
+} else {
+  Write-Host "[PATCH] globals.css: toast já existe (skip)"
+}
+
+# -----------------------
+# REPORT
+# -----------------------
+EnsureDirLocal (Join-Path $root "reports")
+$reportRel = "reports\" + $step + "-" + $stamp + ".md"
+$reportPath = Join-Path $root $reportRel
+
+$rep = @()
+$rep += "# CV — B6h: Provas V2 (Por domínio) — Copiar MD/TXT + toast"
+$rep += ""
+$rep += ("- when: " + $stamp)
+$rep += ("- component: " + $compRel)
+$rep += ("- css: " + $cssRel)
+$rep += ""
+$rep += "## O que muda"
+$rep += "- Copiar (MD) agora inclui heading com titulo da página + slug + link."
+$rep += "- Copiar links (TXT) (URLs em linhas) respeita filtro ativo."
+$rep += "- Toast discreto de feedback (sem setState em effect)."
+$rep += ""
+$rep += "## VERIFY"
+$rep += "- Rodar tools/cv-verify.ps1"
+
+WriteUtf8NoBomLocal $reportPath ($rep -join "`n")
+Write-Host ("[REPORT] " + (RelLocal $root $reportPath))
+
+# -----------------------
+# VERIFY
+# -----------------------
+$verify = Join-Path $root "tools\cv-verify.ps1"
+if (Test-Path -LiteralPath $verify) {
+  Write-Host ("[RUN] " + (RelLocal $root $verify))
+  & $verify
+} else {
+  Write-Host "[WARN] tools\cv-verify.ps1 não encontrado — pulei verify"
+}
+
+Write-Host "[OK] B6h aplicado."
+if ($OpenReport) { try { Invoke-Item $reportPath } catch { } }

@@ -1,0 +1,237 @@
+"use client";
+
+import { useEffect, useMemo } from "react";
+import { useSyncExternalStore } from "react";
+
+type LinkItem = { href: string; text: string; domain: string };
+type Group = { domain: string; items: LinkItem[] };
+
+type Snapshot = {
+  items: LinkItem[];
+  open: Record<string, boolean>;
+  lastScan: number;
+  error: string | null;
+};
+
+function createStore() {
+  let snap: Snapshot = { items: [], open: {}, lastScan: 0, error: null };
+  const listeners = new Set<() => void>();
+  const emit = () => { for (const fn of Array.from(listeners)) fn(); };
+  return {
+    getSnapshot: () => snap,
+    subscribe: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); },
+    set: (patch: Partial<Snapshot>) => { snap = { ...snap, ...patch }; emit(); },
+    setOpen: (key: string, isOpen: boolean) => {
+      const next: Record<string, boolean> = { ...(snap.open || {}) };
+      next[key] = isOpen;
+      snap = { ...snap, open: next };
+      emit();
+    },
+    setAllOpen: (isOpen: boolean, keys: string[]) => {
+      const next: Record<string, boolean> = { ...(snap.open || {}) };
+      for (const k of keys) next[k] = isOpen;
+      snap = { ...snap, open: next };
+      emit();
+    },
+  };
+}
+
+const store = createStore();
+
+function safeHost(href: string): string {
+  try {
+    const u = new URL(href, window.location.href);
+    const host = String(u.hostname || "").toLowerCase();
+    if (!host) return "outros";
+    return host.startsWith("www.") ? host.slice(4) : host;
+  } catch {
+    return "outros";
+  }
+}
+
+function normalizeText(input: unknown): string {
+  const raw = (input == null ? "" : String(input));
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  // colapsa whitespace sem depender de regex unicode complexo
+  return trimmed.split(/\\s+/g).join(" ");
+}
+
+function escapeMdText(s: string): string {
+  // sem regex: mais "tijolo-safe"
+  return s.split("[").join("\\\\[").split("]").join("\\\\]");
+}
+
+function copyText(text: string): void {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      void navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    void document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch {
+    // ignore
+  }
+}
+
+export type Cv2ProvasGroupedClientProps = {
+  rootId: string;
+  listSelector?: string;
+  title?: string;
+};
+
+export function Cv2ProvasGroupedClient(props: Cv2ProvasGroupedClientProps) {
+  const snap = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const rootId = props.rootId;
+  const listSelector = props.listSelector;
+
+  const groups: Group[] = useMemo(() => {
+    const by: Record<string, LinkItem[]> = {};
+    for (const it of snap.items) {
+      const key = it.domain || "outros";
+      if (!by[key]) by[key] = [];
+      by[key].push(it);
+    }
+    const domains = Object.keys(by).sort((a, b) => a.localeCompare(b));
+    return domains.map((d) => ({ domain: d, items: by[d] }));
+  }, [snap.items]);
+
+  const domainKeys = useMemo(() => groups.map((g) => g.domain), [groups]);
+
+  useEffect(() => {
+    let t: number | null = null;
+    const schedule = () => {
+      if (t != null) { window.clearTimeout(t); t = null; }
+      t = window.setTimeout(() => { t = null; scanNow(); }, 50);
+    };
+    const scanNow = () => {
+      try {
+        const rootEl = document.getElementById(rootId);
+        if (!rootEl) {
+          store.set({ items: [], lastScan: Date.now(), error: "root_not_found" });
+          return;
+        }
+        const base = (listSelector ? (rootEl.querySelector(listSelector) as HTMLElement | null) : null) || rootEl;
+        const anchors = Array.from(base.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+        const items: LinkItem[] = [];
+        for (const a of anchors) {
+          if (a.closest("[data-cv2-filter-ui=\\"1\\"]")) continue;
+          if (a.closest("[data-cv2-provas-tools=\\"1\\"]")) continue;
+          if (a.closest("nav")) continue;
+          const href = a.getAttribute("href") || "";
+          if (!href) continue;
+          const domAttr = (a.getAttribute("data-domain") || "").trim();
+          const domain = domAttr ? domAttr : safeHost(href);
+          const text = normalizeText(a.textContent) || href;
+          const el = a as unknown as HTMLElement;
+          if (el.closest("[hidden]")) continue;
+          try {
+            const cs = window.getComputedStyle(el);
+            if (cs.display === "none" || cs.visibility === "hidden") continue;
+          } catch {
+            // ignore
+          }
+          items.push({ href, text, domain });
+        }
+        store.set({ items, lastScan: Date.now(), error: null });
+      } catch {
+        store.set({ items: [], lastScan: Date.now(), error: "scan_failed" });
+      }
+    };
+
+    schedule();
+    const rootEl = document.getElementById(rootId);
+    if (!rootEl) return () => { if (t != null) window.clearTimeout(t); };
+
+    const onAny = () => schedule();
+    rootEl.addEventListener("input", onAny, true);
+    rootEl.addEventListener("change", onAny, true);
+    rootEl.addEventListener("click", onAny, true);
+
+    return () => {
+      if (t != null) window.clearTimeout(t);
+      rootEl.removeEventListener("input", onAny, true);
+      rootEl.removeEventListener("change", onAny, true);
+      rootEl.removeEventListener("click", onAny, true);
+    };
+  }, [rootId, listSelector]);
+
+  const headerTitle = props.title || "Por domínio";
+
+  return (
+    <div data-cv2-provas-tools="1" className="cv2-card" style={{ marginTop: 12 }}>
+      <div className="cv2-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontWeight: 700 }}>{headerTitle}</div>
+        <div className="cv2-muted" style={{ fontSize: 12 }}>{snap.items.length} links</div>
+        <div style={{ marginLeft: "auto" }} />
+        <button type="button" className="cv2-chip" onClick={() => store.setAllOpen(true, domainKeys)}>Expandir</button>
+        <button type="button" className="cv2-chip" onClick={() => store.setAllOpen(false, domainKeys)}>Colapsar</button>
+        <button
+          type="button"
+          className="cv2-chip"
+          onClick={() => {
+            const md: string[] = [];
+            md.push("# Provas (por domínio)");
+            md.push("");
+            for (const g of groups) {
+              md.push("## " + g.domain + " (" + g.items.length + ")");
+              for (const it of g.items) {
+                const safeText = escapeMdText(it.text);
+                md.push("- [" + safeText + "](" + it.href + ")");
+              }
+              md.push("");
+            }
+            copyText(md.join("\\n"));
+          }}
+        >
+          Copiar (MD)
+        </button>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        {groups.map((g) => {
+          const isOpen = (snap.open && typeof snap.open[g.domain] === "boolean") ? snap.open[g.domain] : true;
+          return (
+            <details
+              key={g.domain}
+              open={isOpen}
+              onToggle={(e) => {
+                const d = e.currentTarget as HTMLDetailsElement;
+                store.setOpen(g.domain, !!d.open);
+              }}
+              className="cv2-details"
+            >
+              <summary className="cv2-summary">
+                <span style={{ fontWeight: 650 }}>{g.domain}</span>
+                <span className="cv2-muted" style={{ marginLeft: 8, fontSize: 12 }}>{g.items.length}</span>
+              </summary>
+              <ul className="cv2-list">
+                {g.items.map((it) => (
+                  <li key={it.href} className="cv2-li">
+                    <a className="cv2-link" href={it.href} target="_blank" rel="noreferrer">{it.text}</a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          );
+        })}
+      </div>
+
+      {snap.error ? <div className="cv2-muted" style={{ marginTop: 10, fontSize: 12 }}>scan: {snap.error}</div> : null}
+    </div>
+  );
+}
+
+export default Cv2ProvasGroupedClient;

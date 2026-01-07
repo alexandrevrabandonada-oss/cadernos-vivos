@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { Cv2HubKeyNavClient } from "./Cv2HubKeyNavClient";
 
 type AnyObj = Record<string, unknown>;
 
@@ -55,7 +56,9 @@ export default function HomeV2Hub(props: { slug: string; title: string; mapa?: u
   const h: CSSProperties = { fontSize: 18, fontWeight: 800, letterSpacing: "-0.2px", marginTop: 6 };
 
   return (
-    <section aria-label={"Hub V2: " + title}>
+    <section aria-label={"Hub V2: " + title} data-cv2-hub="map" className="cv2-hubMap" id="cv2-hub-map">
+      <Cv2HubKeyNavClient rootId="cv2-hub-map" />
+
       <div style={{ fontSize: 12, opacity: 0.75 }}>Concreto Zen • V2</div>
       <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.6px", marginTop: 6 }}>{title}</div>
 

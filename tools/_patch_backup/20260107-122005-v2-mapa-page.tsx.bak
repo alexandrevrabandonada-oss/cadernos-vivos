@@ -1,0 +1,48 @@
+import { notFound } from "next/navigation";
+import type { CSSProperties } from "react";
+import V2Nav from "@/components/v2/V2Nav";
+import MapaV2Interactive from "@/components/v2/MapaV2Interactive";
+import { loadCadernoV2 } from "@/lib/v2";
+import type { Metadata } from "next";
+import { cvReadMetaLoose } from "@/lib/v2/load";
+
+type AccentStyle = CSSProperties & Record<"--accent", string>;
+
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const meta = await cvReadMetaLoose(params.slug);
+  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
+  const m = meta as unknown as Record<string, unknown>;
+  const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
+  const description = rawDesc.trim().length ? rawDesc.trim() : undefined;
+  return {
+    title: title + " • Cadernos Vivos",
+    description,
+  };
+}
+export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+
+  let data: Awaited<ReturnType<typeof loadCadernoV2>>;
+  try {
+    data = await loadCadernoV2(slug);
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err && err.code === "ENOENT") return notFound();
+    throw e;
+  }
+
+  const title = data.meta?.title ?? slug;
+  const accent = data.meta?.accent ?? "#F7C600";
+  const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
+  const mapa = (data as unknown as Record<string, unknown>)["mapa"];
+
+  return (
+    <main style={{ padding: 14, maxWidth: 1180, margin: "0 auto", ...s }}>
+      <V2Nav slug={slug} active="mapa" />
+      <div style={{ marginTop: 12 }}>
+        <MapaV2Interactive slug={slug} title={title} mapa={mapa} />
+      </div>
+    </main>
+  );
+}

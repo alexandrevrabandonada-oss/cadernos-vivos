@@ -1,0 +1,136 @@
+"use client";
+
+import React, { useEffect, useRef, useState } from "react";
+
+type Props = {
+  rootId: string;
+  placeholder?: string;
+};
+
+type Stats = { total: number; shown: number };
+
+function foldText(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function collectItems(root: HTMLElement): HTMLElement[] {
+  const pick = (sel: string): HTMLElement[] => {
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>(sel));
+    return nodes.filter((el) => !el.closest("[data-cv2-filter-ui=\\"1\\"]"));
+  };
+
+  const candidates = [
+    ".cv2-card",
+    "[data-cv2-card]",
+    "article",
+    "li",
+  ];
+
+  for (const sel of candidates) {
+    const got = pick(sel);
+    if (got.length > 0) return got;
+  }
+
+  return [];
+}
+
+export function Cv2DomFilterClient({ rootId, placeholder }: Props) {
+  const [query, setQuery] = useState<string>("");
+  const [stats, setStats] = useState<Stats>({ total: 0, shown: 0 });
+  const itemsRef = useRef<HTMLElement[]>([]);
+
+  useEffect(() => {
+    const root = document.getElementById(rootId);
+    if (!root) {
+      itemsRef.current = [];
+      setStats({ total: 0, shown: 0 });
+      return;
+    }
+
+    const items = collectItems(root);
+    itemsRef.current = items;
+    setStats({ total: items.length, shown: items.length });
+  }, [rootId]);
+
+  useEffect(() => {
+    const items = itemsRef.current;
+    if (items.length === 0) {
+      setStats({ total: 0, shown: 0 });
+      return;
+    }
+
+    const q = foldText(query.trim());
+    let shown = 0;
+
+    for (const el of items) {
+      const hay = foldText(el.textContent ?? "");
+      const ok = q.length === 0 ? true : hay.includes(q);
+      el.hidden = !ok;
+      if (ok) shown += 1;
+    }
+
+    setStats({ total: items.length, shown });
+  }, [query]);
+
+  return (
+    <div
+      data-cv2-filter-ui="1"
+      style={{
+        display: "flex",
+        gap: "10px",
+        alignItems: "center",
+        flexWrap: "wrap",
+        margin: "12px 0 14px",
+        padding: "10px 12px",
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,0.10)",
+        background: "rgba(255,255,255,0.03)",
+        backdropFilter: "blur(6px)",
+      }}
+    >
+      <label style={{ opacity: 0.85, fontSize: 14 }}>Filtrar</label>
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setQuery("");
+        }}
+        placeholder={placeholder ?? "Digite para filtrar..."}
+        style={{
+          minWidth: 220,
+          padding: "10px 12px",
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background: "var(--card)",
+          color: "var(--fg)",
+          outline: "none",
+        }}
+        aria-label="Filtrar itens da lista"
+      />
+      <button
+        type="button"
+        onClick={() => setQuery("")}
+        disabled={query.trim().length === 0}
+        style={{
+          padding: "10px 12px",
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background: "rgba(255,255,255,0.04)",
+          color: "var(--fg)",
+          opacity: query.trim().length === 0 ? 0.45 : 1,
+          cursor: query.trim().length === 0 ? "default" : "pointer",
+        }}
+      >
+        Limpar
+      </button>
+      <span aria-live="polite" style={{ opacity: 0.85, fontSize: 13 }}>
+        {stats.shown}/{stats.total}
+      </span>
+      <span style={{ opacity: 0.6, fontSize: 12 }}>(ESC limpa)</span>
+    </div>
+  );
+}

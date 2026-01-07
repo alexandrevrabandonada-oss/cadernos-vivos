@@ -12,9 +12,12 @@ async function getSlug(params: AnyParams): Promise<string> {
 }
 
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const meta = await cvReadMetaLoose(params.slug);
-  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+
+
+  const meta = await cvReadMetaLoose(slug);
+  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : slug;
   const m = meta as unknown as Record<string, unknown>;
   const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
   const description = rawDesc.trim().length ? rawDesc.trim() : undefined;
@@ -24,6 +27,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
 }
 export default async function Page({ params }: { params: AnyParams }) {
+
   const slug = await getSlug(params);
   const caderno = await loadCadernoV2(slug);
   const title = (caderno && (caderno as unknown as { title?: string }).title) ? (caderno as unknown as { title: string }).title : slug;

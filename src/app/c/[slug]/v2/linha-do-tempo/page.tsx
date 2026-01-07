@@ -5,10 +5,24 @@ import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
 
+async function getSlug(params: Promise<{ slug: string }>): Promise<string> {
+  try {
+    const p = await params;
+    const slug = p && typeof p.slug === "string" ? p.slug : "";
+    return slug;
+  } catch {
+    const p = params as unknown;
+    const slug = p && typeof p.slug === "string" ? p.slug : "";
+    return slug;
+  }
+}
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const meta = await cvReadMetaLoose(params.slug);
-  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : params.slug;
+
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const slug = await getSlug(params);
+  const meta = await cvReadMetaLoose(slug);
+  const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : slug;
   const m = meta as unknown as Record<string, unknown>;
   const rawDesc = (typeof m["description"] === "string") ? (m["description"] as string) : "";
   const description = rawDesc.trim().length ? rawDesc.trim() : undefined;
@@ -18,7 +32,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
 }
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+  const { slug } = await Promise.resolve(params);
   const data = await loadCadernoV2(slug);
   if (!data) return notFound();
 
