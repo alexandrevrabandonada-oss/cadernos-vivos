@@ -1,5 +1,46 @@
 # tools/cv-hotfix-b7o4-fix-sanitize-script-and-verify-v0_3.ps1
 # Fix: $args é variável automática. Runner de npm tem que usar outro nome (ex.: $npmArgs).
+function RunCmd {
+  param(
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [object[]]$all
+  )
+  if (-not $all -or $all.Count -lt 1) { throw "RunCmd: missing cmd" }
+  $cmd = [string]$all[0]
+  $rest = @()
+  if ($all.Count -gt 1) { $rest = $all[1..($all.Count-1)] }
+  $cwd = $null
+  $argsList = New-Object System.Collections.Generic.List[string]
+  foreach ($x in $rest) {
+    if (-not $cwd -and $x -is [string]) {
+      $s = [string]$x
+      if (Test-Path -LiteralPath $s -PathType Container) {
+        $pj = Join-Path $s "package.json"
+        if (Test-Path -LiteralPath $pj) { $cwd = $s; continue }
+      }
+    }
+    if ($x -is [string[]]) {
+      foreach ($y in $x) { if ($y -ne $null -and [string]$y -ne "") { $argsList.Add([string]$y) | Out-Null } }
+    } elseif ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
+      foreach ($y in $x) { if ($y -ne $null -and [string]$y -ne "") { $argsList.Add([string]$y) | Out-Null } }
+    } else {
+      if ($x -ne $null -and [string]$x -ne "") { $argsList.Add([string]$x) | Out-Null }
+    }
+  }
+  if (-not $cwd) { $cwd = (Resolve-Path ".").Path }
+  $cmdArgs = @($argsList.ToArray())
+  $old = Get-Location
+  try {
+    Set-Location $cwd
+    Write-Host ("[RUN] " + $cmd + ($(if($cmdArgs.Count -gt 0){ " " + ($cmdArgs -join " ") } else { "" })))
+    $out = & $cmd @cmdArgs 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { throw ("Command failed: " + $cmd + " " + ($cmdArgs -join " ") + "`n" + $out) }
+    return $out.TrimEnd()
+  } finally {
+    Set-Location $old
+  }
+}
+
 # DIAG -> PATCH -> VERIFY -> REPORT
 
 param(
@@ -51,24 +92,32 @@ function ResolveNpmCmd() {
 
   throw 'Nao consegui localizar npm(.cmd).'
 }
-
-function RunNpm([string[]]$npmArgs, [string]$cwd) {
-  if (-not $npmArgs -or $npmArgs.Count -eq 0) {
-    throw 'RunNpm recebeu args vazios (isso nao pode acontecer).'
-  }
-
-  $npm = ResolveNpmCmd
-  $old = Get-Location
-  try {
-    Set-Location $cwd
-    $out = & $npm @npmArgs 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
-      throw ("Command failed: npm " + ($npmArgs -join ' ') + "`n" + $out)
+function RunNpm {
+  param(
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [object[]]$all
+  )
+  $npm = $null
+  $c1 = Get-Command npm.cmd -ErrorAction SilentlyContinue
+  if ($c1 -and (Test-Path -LiteralPath $c1.Source)) { $npm = $c1.Source }
+  if (-not $npm) {
+    $c2 = Get-Command npm -ErrorAction SilentlyContinue
+    if ($c2 -and (Test-Path -LiteralPath $c2.Source)) {
+      if ($c2.Source.ToLower().EndsWith(".ps1")) {
+        $try = [IO.Path]::ChangeExtension($c2.Source, ".cmd")
+        if (Test-Path -LiteralPath $try) { $npm = $try } else { $npm = $c2.Source }
+      } else {
+        $npm = $c2.Source
+      }
     }
-    return $out.TrimEnd()
-  } finally {
-    Set-Location $old
   }
+  if (-not $npm) {
+    $fallback = Join-Path ${env:ProgramFiles} "nodejs\npm.cmd"
+    if (Test-Path -LiteralPath $fallback) { $npm = $fallback }
+  }
+  if (-not $npm) { throw "Nao consegui localizar npm(.cmd)." }
+  $pass = @($npm) + $all
+  return (RunCmd @pass)
 }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -98,7 +147,7 @@ $npmResolved = ResolveNpmCmd
 AddLine $r ('- npm resolved: ' + $npmResolved)
 AddLine $r ''
 
-# PATCH: corrigir B7O3 .Replace($c,"")
+# PATCH: corrigir B7O3 .Replace([string]$c, "")
 $b7o3Rel = 'tools\cv-hotfix-b7o3-core-highlights-sanitize-inject.ps1'
 $b7o3Abs = Join-Path $root $b7o3Rel
 

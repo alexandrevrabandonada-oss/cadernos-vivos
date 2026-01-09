@@ -7,7 +7,7 @@ function NowStamp() { return (Get-Date).ToString("yyyyMMdd-HHmmss") }
 
 function EnsureDir([string]$p) {
   if ([string]::IsNullOrWhiteSpace($p)) { return }
-  if (!(Test-Path $p)) { New-Item -ItemType Directory -Force -Path $p | Out-Null }
+  if (!(Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Force -Path $p | Out-Null }
 }
 
 function WriteUtf8NoBom([string]$path, [string]$content) {
@@ -16,7 +16,7 @@ function WriteUtf8NoBom([string]$path, [string]$content) {
 }
 
 function BackupFile([string]$root, [string]$absPath) {
-  if (!(Test-Path $absPath)) { return }
+  if (!(Test-Path -LiteralPath $absPath)) { return }
   $bkRoot = Join-Path $root "tools/_patch_backup"
   EnsureDir $bkRoot
   $rel = $absPath.Substring($root.Length).TrimStart('\','/')
@@ -27,7 +27,7 @@ function BackupFile([string]$root, [string]$absPath) {
 
 function FindAllV2PortalUsages([string]$root) {
   $base = Join-Path $root "src/app/c/[slug]/v2"
-  if (!(Test-Path $base)) { return @() }
+  if (!(Test-Path -LiteralPath $base)) { return @() }
   $files = Get-ChildItem -Path $base -Recurse -File -Filter "page.tsx" -ErrorAction SilentlyContinue
   $hits = @()
   foreach ($f in $files) {
@@ -51,7 +51,7 @@ function DetectCoreExpr([string]$raw) {
 }
 
 function PatchOne([string]$root, [string]$filePath, [System.Collections.Generic.List[string]]$log) {
-  if (!(Test-Path $filePath)) { return }
+  if (!(Test-Path -LiteralPath $filePath)) { return }
 
   $raw = Get-Content -Raw -Encoding UTF8 $filePath
   $orig = $raw
@@ -113,12 +113,47 @@ function PatchOne([string]$root, [string]$filePath, [System.Collections.Generic.
     $log.Add("[OK] no change: " + $filePath) | Out-Null
   }
 }
-
-function RunCmd([string]$cmd, [string[]]$args) {
-  Write-Host ("[RUN] " + $cmd + " " + ($args -join " "))
-  & $cmd @args
-  if ($LASTEXITCODE -ne 0) { throw ("Command failed: " + $cmd + " " + ($args -join " ")) }
+function RunCmd {
+  param(
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [object[]]$all
+  )
+  if (-not $all -or $all.Count -lt 1) { throw "RunCmd: missing cmd" }
+  $cmd = [string]$all[0]
+  $rest = @()
+  if ($all.Count -gt 1) { $rest = $all[1..($all.Count-1)] }
+  $cwd = $null
+  $argsList = New-Object System.Collections.Generic.List[string]
+  foreach ($x in $rest) {
+    if (-not $cwd -and $x -is [string]) {
+      $s = [string]$x
+      if (Test-Path -LiteralPath $s -PathType Container) {
+        $pj = Join-Path $s "package.json"
+        if (Test-Path -LiteralPath $pj) { $cwd = $s; continue }
+      }
+    }
+    if ($x -is [string[]]) {
+      foreach ($y in $x) { if ($y -ne $null -and ([string]$y) -ne "") { $argsList.Add([string]$y) | Out-Null } }
+    } elseif ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) {
+      foreach ($y in $x) { if ($y -ne $null -and ([string]$y) -ne "") { $argsList.Add([string]$y) | Out-Null } }
+    } else {
+      if ($x -ne $null -and ([string]$x) -ne "") { $argsList.Add([string]$x) | Out-Null }
+    }
+  }
+  if (-not $cwd) { $cwd = (Resolve-Path ".").Path }
+  $cmdArgs = @($argsList.ToArray())
+  $old = Get-Location
+  try {
+    Set-Location $cwd
+    Write-Host ("[RUN] " + $cmd + ($(if($cmdArgs.Count -gt 0){ " " + ($cmdArgs -join " ") } else { "" })))
+    $out = & $cmd @cmdArgs 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { throw ("Command failed: " + $cmd + " " + ($cmdArgs -join " ") + "`n" + $out) }
+    return $out.TrimEnd()
+  } finally {
+    Set-Location $old
+  }
 }
+
 
 # ---------------- main
 $root = (Resolve-Path ".").Path
@@ -161,7 +196,7 @@ $log.Add("## VERIFY") | Out-Null
 $log.Add("") | Out-Null
 
 $npm = $null
-try { $npm = (Get-Command npm -ErrorAction Stop).Source } catch { $npm = "npm.cmd" }
+try { $npm = (Get-Command npm.cmd -ErrorAction Stop).Source } catch { $npm = "npm.cmd" }
 
 try {
   RunCmd $npm @("run","lint")

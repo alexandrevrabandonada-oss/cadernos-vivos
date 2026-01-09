@@ -51,20 +51,48 @@ function ResolveNpmCmd() {
 
   throw 'Não consegui localizar npm(.cmd).'
 }
-
-function RunNpm([string[]]$args, [string]$cwd) {
-  $npm = ResolveNpmCmd
-  $old = Get-Location
-  try {
-    Set-Location $cwd
-    $out = & $npm @args 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
-      throw ("Command failed: npm " + ($args -join ' ') + "`n" + $out)
+function RunNpm {
+  param(
+    [Parameter(ValueFromRemainingArguments=$true)][object[]]$all
+  )
+  $npm = $null
+  $c1 = Get-Command npm.cmd -ErrorAction SilentlyContinue
+  if ($c1 -and (Test-Path -LiteralPath $c1.Source)) { $npm = $c1.Source }
+  if (-not $npm) {
+    $c2 = Get-Command npm -ErrorAction SilentlyContinue
+    if ($c2 -and (Test-Path -LiteralPath $c2.Source)) {
+      $src = [string]$c2.Source
+      if ($src.ToLower().EndsWith(".ps1")) {
+        $try = [IO.Path]::ChangeExtension($src, ".cmd")
+        if (Test-Path -LiteralPath $try) { $npm = $try } else { $npm = $src }
+      } else {
+        $npm = $src
+      }
     }
-    return $out.TrimEnd()
-  } finally {
-    Set-Location $old
   }
+  if (-not $npm) {
+    $fallback = Join-Path ${env:ProgramFiles} "nodejs\npm.cmd"
+    if (Test-Path -LiteralPath $fallback) { $npm = $fallback }
+  }
+  if (-not $npm) { throw "Nao consegui localizar npm(.cmd)." }
+
+  # suporta: RunNpm @("run","lint") $root  OU  RunNpm "run" "lint" $root
+  $cwd = $null
+  $argsList = New-Object System.Collections.Generic.List[string]
+  foreach ($x in $all) {
+    if (-not $cwd -and $x -is [string]) {
+      $s = [string]$x
+      if (Test-Path -LiteralPath $s -PathType Container) {
+        $pj = Join-Path $s "package.json"
+        if (Test-Path -LiteralPath $pj) { $cwd = $s; continue }
+      }
+    }
+    if ($x -is [string[]]) { foreach ($y in $x) { if ($y) { $argsList.Add([string]$y) | Out-Null } } }
+    elseif ($x -is [System.Collections.IEnumerable] -and -not ($x -is [string])) { foreach ($y in $x) { if ($y) { $argsList.Add([string]$y) | Out-Null } } }
+    else { if ($x) { $argsList.Add([string]$x) | Out-Null } }
+  }
+  if (-not $cwd) { $cwd = (Resolve-Path ".").Path }
+  return (RunCmd $npm ($argsList.ToArray()) $cwd)
 }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

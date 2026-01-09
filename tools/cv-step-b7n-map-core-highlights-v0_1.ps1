@@ -6,12 +6,12 @@ Write-Host ("== CV B7N MAP CORE HIGHLIGHTS == " + $stamp)
 
 $root = (Resolve-Path ".").Path
 $boot = Join-Path $root "tools\_bootstrap.ps1"
-if (Test-Path $boot) {
+if (Test-Path -LiteralPath $boot) {
   . $boot
 } else {
-  function EnsureDir($p){ if(-not (Test-Path $p)){ New-Item -ItemType Directory -Force -Path $p | Out-Null } }
+  function EnsureDir($p){ if(-not (Test-Path -LiteralPath $p)){ New-Item -ItemType Directory -Force -Path $p | Out-Null } }
   function BackupFile($p){
-    if(Test-Path $p){
+    if(Test-Path -LiteralPath $p){
       $bdir = Join-Path $root ("tools\_patch_backup\" + $stamp)
       EnsureDir $bdir
       Copy-Item -Force $p (Join-Path $bdir ([IO.Path]::GetFileName($p)))
@@ -47,8 +47,8 @@ $page = Join-Path $root $pageRel
 $css  = Join-Path $root $cssRel
 
 # DIAG
-if (-not (Test-Path $page)) { throw ("Missing map page: " + $pageRel) }
-if (-not (Test-Path $css))  { throw ("Missing globals: " + $cssRel) }
+if (-not (Test-Path -LiteralPath $page)) { throw ("Missing map page: " + $pageRel) }
+if (-not (Test-Path -LiteralPath $css))  { throw ("Missing globals: " + $cssRel) }
 
 # PATCH 1) Component file
 BackupFile $comp
