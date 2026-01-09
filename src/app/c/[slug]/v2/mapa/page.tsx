@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 import V2Nav from "@/components/v2/V2Nav";
+import V2QuickNav from "@/components/v2/V2QuickNav";
 import MapaV2Interactive from "@/components/v2/MapaV2Interactive";
+import Cv2MapRail from "@/components/v2/Cv2MapRail";
 import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
+import V2Portals from "@/components/v2/V2Portals";
 
 type AccentStyle = CSSProperties & Record<"--accent", string>;
 
@@ -41,10 +44,17 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
   return (
     <main style={{ padding: 14, maxWidth: 1180, margin: "0 auto", ...s }}>
-      <V2Nav slug={slug} active="mapa" />
-      <div style={{ marginTop: 12 }}>
-        <MapaV2Interactive slug={slug} title={title} mapa={mapa} />
+      <V2Nav slug={slug} active="mapa"  />
+      <V2QuickNav />
+            <div className="cv2-map-layout" style={{ marginTop: 12 }}>
+        <section className="cv2-map-main" aria-label="Mapa do universo">
+          <MapaV2Interactive slug={slug} title={title} mapa={mapa} />
+        </section>
+        <aside className="cv2-map-rail" aria-label="Corredor de portas do mapa">
+          <Cv2MapRail slug={slug} title={title} meta={data.meta} />
+        </aside>
       </div>
+      <V2Portals slug={slug} active="mapa" />
     </main>
   );
 }

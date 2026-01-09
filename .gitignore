@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Cadernos Vivos — local patch backups
+tools/_patch_backup/
+

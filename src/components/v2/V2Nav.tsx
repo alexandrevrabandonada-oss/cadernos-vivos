@@ -1,55 +1,130 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 
-type NavItem = { key: string; label: string; href: (slug: string) => string };
+type Props = {
+  slug: string;
+  active?: string;
+  current?: string;
+  title?: string;
+};
 
-const items: NavItem[] = [
-  { key: "home", label: "Hub", href: (slug) => "/c/" + slug + "/v2" },
-  { key: "mapa", label: "Mapa", href: (slug) => "/c/" + slug + "/v2/mapa" },
-  { key: "linha", label: "Linha", href: (slug) => "/c/" + slug + "/v2/linha" },
-  { key: "debate", label: "Debate", href: (slug) => "/c/" + slug + "/v2/debate" },
-  { key: "provas", label: "Provas", href: (slug) => "/c/" + slug + "/v2/provas" },
-  { key: "trilhas", label: "Trilhas", href: (slug) => "/c/" + slug + "/v2/trilhas" },
+type DoorKey =
+  | "hub"
+  | "mapa"
+  | "linha"
+  | "linha-do-tempo"
+  | "provas"
+  | "trilhas"
+  | "debate";
+
+type Door = { key: DoorKey; label: string; path: string };
+
+const DOORS: Door[] = [
+  { key: "hub", label: "Hub", path: "" },
+  { key: "mapa", label: "Mapa", path: "/mapa" },
+  { key: "linha", label: "Linha", path: "/linha" },
+  { key: "linha-do-tempo", label: "Linha do tempo", path: "/linha-do-tempo" },
+  { key: "provas", label: "Provas", path: "/provas" },
+  { key: "trilhas", label: "Trilhas", path: "/trilhas" },
+  { key: "debate", label: "Debate", path: "/debate" },
 ];
 
-export default function V2Nav(props: { slug: string; active?: string }) {
-  const { slug, active } = props;
+function normKey(v: string | undefined): DoorKey {
+  const x = (v || "").trim();
+  if (x === "mapa") return "mapa";
+  if (x === "linha") return "linha";
+  if (x === "linha-do-tempo" || x === "linha_do_tempo" || x === "timeline") return "linha-do-tempo";
+  if (x === "provas") return "provas";
+  if (x === "trilhas") return "trilhas";
+  if (x === "debate") return "debate";
+  return "hub";
+}
 
-  const wrap: CSSProperties = {
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    marginTop: 12,
-    alignItems: "center",
-  };
+export default function V2Nav(props: Props) {
+  const active = normKey(props.active || props.current);
+  const base = "/c/" + props.slug + "/v2";
 
-  const base: CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "8px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.14)",
-    textDecoration: "none",
-    color: "inherit",
-    fontSize: 12,
-    background: "rgba(0,0,0,0.18)",
-  };
-
-  const on: CSSProperties = {
-    ...base,
-    background: "rgba(255,255,255,0.08)",
-  };
+  const cta =
+    active === "mapa"
+      ? { label: "Voltar ao Hub", href: base, kind: "hub" as const }
+      : { label: "Comece pelo Mapa →", href: base + "/mapa", kind: "mapa" as const };
 
   return (
-    <nav aria-label="Navegação V2" style={wrap}>
-      {items.map((it) => {
-        const isOn = (active ? active === it.key : it.key === "home");
-        return (
-          <Link key={it.key} href={it.href(slug)} style={isOn ? on : base}>
-            {it.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        justifyContent: "space-between",
+        flexWrap: "wrap",
+      }}
+    >
+      <nav aria-label="Navegação V2">
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {DOORS.map((d) => {
+            const href = base + d.path;
+            const isActive = active === d.key;
+            const isMapa = d.key === "mapa";
+            return (
+              <Link
+                key={d.key}
+                href={href}
+                aria-current={isActive ? "page" : undefined}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  borderRadius: 999,
+                  padding: "8px 12px",
+                  border: "1px solid rgba(255,255,255,0.16)",
+                  background: isActive ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.10)",
+                  whiteSpace: "nowrap",
+                  fontSize: 14,
+                  lineHeight: "18px",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <span style={{ fontWeight: isActive ? 800 : 650 }}>{d.label}</span>
+                {isMapa && active !== "mapa" ? (
+                  <span
+                    style={{
+                      fontSize: 12,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(255,255,255,0.22)",
+                      background: "rgba(255,255,255,0.08)",
+                      opacity: 0.9,
+                    }}
+                  >
+                    comece aqui
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Link
+          href={cta.href}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            borderRadius: 999,
+            padding: "8px 12px",
+            border: "1px solid rgba(255,255,255,0.22)",
+            background: cta.kind === "mapa" ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)",
+            textDecoration: "none",
+            color: "inherit",
+            fontSize: 13,
+            fontWeight: 750,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {cta.label}
+        </Link>
+      </div>
+    </div>
   );
 }

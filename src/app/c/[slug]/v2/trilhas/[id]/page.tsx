@@ -4,19 +4,23 @@ import Link from "next/link";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import V2Nav from "@/components/v2/V2Nav";
+import V2QuickNav from "@/components/v2/V2QuickNav";
 import type { Trail, TrailStep } from "@/components/v2/TrilhasV2";
 import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
+import V2Portals from "@/components/v2/V2Portals";
+import Cv2MapFirstCta from "@/components/v2/Cv2MapFirstCta";
+import Cv2UniverseRail from "@/components/v2/Cv2UniverseRail";
 
 async function getSlug(params: Promise<{ slug: string; id: string }>): Promise<string> {
   try {
     const p = await params;
-    const slug = p && typeof p.slug === "string" ? p.slug : "";
+    const slug = typeof p["slug"] === "string" ? (p["slug"] as string) : "";
     return slug;
   } catch {
-    const p = params as unknown;
-    const slug = p && typeof p.slug === "string" ? p.slug : "";
+    const p = params as unknown as Record<string, unknown>;
+    const slug = typeof p["slug"] === "string" ? (p["slug"] as string) : "";
     return slug;
   }
 }
@@ -112,8 +116,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
   const back = "/c/" + slug + "/v2/trilhas";
 
   return (
-    <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
-      <V2Nav slug={slug} active="trilhas" />
+    <div className="cv2-layout">
+  <Cv2UniverseRail slug={slug} active="trilhas" />
+  <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
+      <V2Nav slug={slug} active="trilhas"  />
+      <V2QuickNav />
+      <Cv2MapFirstCta slug={slug} current="trilhas" />
 
       <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -188,6 +196,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
           Dica: steps podem apontar para V2 (mapa, debate, provas, linha do tempo) usando href.
         </div>
       </div>
+      <V2Portals slug={slug} active="trilhas" />
     </main>
+</div>
   );
 }

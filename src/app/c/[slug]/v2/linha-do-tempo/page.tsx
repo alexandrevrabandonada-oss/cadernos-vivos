@@ -1,18 +1,22 @@
 import { notFound } from "next/navigation";
 import V2Nav from "@/components/v2/V2Nav";
+import V2QuickNav from "@/components/v2/V2QuickNav";
 import { LinhaDoTempoV2 } from "@/components/v2/LinhaDoTempoV2";
 import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
+import Cv2DomFilterClient from "@/components/v2/Cv2DomFilterClient";
+import V2Portals from "@/components/v2/V2Portals";
+import Cv2MapFirstCta from "@/components/v2/Cv2MapFirstCta";
 
 async function getSlug(params: Promise<{ slug: string }>): Promise<string> {
   try {
     const p = await params;
-    const slug = p && typeof p.slug === "string" ? p.slug : "";
+    const slug = p && typeof p["slug"] === "string" ? (p["slug"] as string) : "";
     return slug;
   } catch {
-    const p = params as unknown;
-    const slug = p && typeof p.slug === "string" ? p.slug : "";
+    const p = params as unknown as Record<string, unknown>;
+    const slug = p && typeof p["slug"] === "string" ? (p["slug"] as string) : "";
     return slug;
   }
 }
@@ -42,9 +46,15 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   const linha = anyData.linhaDoTempo ? anyData.linhaDoTempo : (anyData.timeline ? anyData.timeline : (mapa && typeof mapa === "object" ? (mapa as Record<string, unknown>).linhaDoTempo : undefined));
 
   return (
+    <div id="cv2-linha-do-tempo-root">
+      <Cv2DomFilterClient rootId="cv2-linha-do-tempo-root" placeholder="Filtrar linha do tempo..." pageSize={24} enablePager />
     <main className="min-h-screen">
-      <V2Nav slug={slug} active="linha" />
+      <V2Nav slug={slug} active="linha"  />
+      <V2QuickNav />
+      <Cv2MapFirstCta slug={slug} current="linha-do-tempo" />
       <LinhaDoTempoV2 slug={slug} title={title0} linha={linha} mapa={mapa} />
+      <V2Portals slug={slug} active="linha-do-tempo" />
     </main>
+    </div>
   );
 }

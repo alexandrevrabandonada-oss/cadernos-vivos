@@ -1,41 +1,31 @@
-type SkelCardProps = {
-  className?: string;
-  lines?: number;
-};
+import React from "react";
 
-export function Cv2SkelCard({ className, lines = 3 }: SkelCardProps) {
-  const cls = ["cv2-card", "cv2-skel", "cv2-skelPad", className].filter(Boolean).join(" ");
-  const items = Array.from({ length: lines }).map((_, i) => i);
+export type SkelMode = "hub" | "list";
+
+export function SkelCard(props: { lines?: number; className?: string }) {
+  const lines = Math.max(1, Math.min(6, props.lines ?? 3));
   return (
-    <div className={cls} aria-hidden="true">
-      <div className="cv2-skelStack">
-        <div className="cv2-skelLine lg" style={{ width: "70%" }} />
-        {items.map((i) => (
-          <div key={i} className={"cv2-skelLine" + (i === items.length - 1 ? " sm" : "")} style={{ width: i === items.length - 1 ? "55%" : "88%" }} />
-        ))}
-      </div>
+    <div className={"cv2-skelCard " + (props.className ?? "")}>
+      <div className="cv2-skelLine" style={{ width: "42%" }} />
+      <div style={{ height: 10 }} />
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} style={{ marginTop: i === 0 ? 0 : 8 }}>
+          <div className="cv2-skelLine" style={{ width: i === lines - 1 ? "58%" : "92%" }} />
+        </div>
+      ))}
     </div>
   );
 }
 
-type ScreenProps = {
-  title?: string;
-  count?: number;
-  mode?: "hub" | "list";
-};
-
-export function Cv2SkelScreen({ title = "Carregando…", count = 5, mode = "list" }: ScreenProps) {
-  const items = Array.from({ length: count }).map((_, i) => i);
-  const wrapCls = mode === "hub" ? "cv2-hubMap" : "";
-  const wrapAttr = mode === "hub" ? { "data-cv2-hub": "map" as const } : {};
+export function SkelScreen(props: { title?: string; count?: number; mode?: SkelMode }) {
+  const count = Math.max(1, Math.min(12, props.count ?? (props.mode === "hub" ? 6 : 8)));
   return (
-    <div className={wrapCls} {...wrapAttr} role="status" aria-live="polite" aria-busy="true">
-      <div className="cv2-muted" style={{ marginBottom: "12px" }}>{title}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
-        {items.map((i) => (
-          <Cv2SkelCard key={i} />
-        ))}
-      </div>
+    <div style={{ display: "grid", gap: 12, padding: 12 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <SkelCard key={i} lines={props.mode === "hub" ? 2 : 4} />
+      ))}
     </div>
   );
 }
+
+export { SkelScreen as Cv2SkelScreen, SkelCard as Cv2SkelCard };

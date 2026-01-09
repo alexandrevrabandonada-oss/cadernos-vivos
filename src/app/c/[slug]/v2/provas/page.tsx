@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import V2Nav from "@/components/v2/V2Nav";
+import V2QuickNav from "@/components/v2/V2QuickNav";
 import ProvasV2 from "@/components/v2/ProvasV2";
 import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
@@ -7,6 +8,8 @@ import { cvReadMetaLoose } from "@/lib/v2/load";
 import Cv2DomFilterClient from "@/components/v2/Cv2DomFilterClient";
 <Cv2ProvasGroupedClient rootId="cv2-provas-root" listSelector="[data-cv2-provas-list]" />
 import { Cv2ProvasGroupedClient } from "@/components/v2/Cv2ProvasGroupedClient";
+import V2Portals from "@/components/v2/V2Portals";
+import Cv2MapFirstCta from "@/components/v2/Cv2MapFirstCta";
 type AnyParams = { slug: string } | Promise<{ slug: string }>; 
 type AnyObj = Record<string, unknown>;
 function isObj(v: unknown): v is AnyObj {
@@ -38,6 +41,8 @@ export default async function Page({ params }: { params: AnyParams }) {
     <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto" }}>
       <div style={bar} />
       <V2Nav slug={slug} active={"provas"} />
+      <V2QuickNav />
+      <Cv2MapFirstCta slug={slug} current="provas" />
       <div style={{ marginTop: 12 }}>
                 <div id="cv2-provas-root">
           <Cv2DomFilterClient rootId="cv2-provas-root" placeholder="Filtrar provas..." />
@@ -46,6 +51,7 @@ export default async function Page({ params }: { params: AnyParams }) {
           </div>
         </div>
       </div>
+      <V2Portals slug={slug} active="provas" />
     </main>
   );
 }
