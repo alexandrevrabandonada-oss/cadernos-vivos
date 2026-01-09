@@ -10,6 +10,7 @@ import { cvReadMetaLoose } from "@/lib/v2/load";
 import Cv2CoreNodes from "@/components/v2/Cv2CoreNodes";
 import Cv2PortalsCurated from "@/components/v2/Cv2PortalsCurated";
 import Cv2DoorGuide from "@/components/v2/Cv2DoorGuide";
+import { Cv2CoreHighlights } from "@/components/v2/Cv2CoreHighlights";
 type AccentStyle = CSSProperties & Record<"--accent", string>;
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -54,7 +55,9 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           <Cv2MapRail slug={slug} title={title} meta={data.meta} />
         </aside>
       </div>
-      <Cv2PortalsCurated slug={slug} active="mapa" />
+      {/* cv2-core-highlights */}
+<Cv2CoreHighlights slug={slug} current="mapa" />
+<Cv2PortalsCurated slug={slug} active="mapa" />
     </main>
   );
 }
