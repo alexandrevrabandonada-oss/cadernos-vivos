@@ -1,52 +1,65 @@
 import Link from "next/link";
+import type { CoreNodesV2 } from "@/lib/v2/types";
 
-type CoreNode = {
-  key: string;
-  href: string;
-  label: string;
-  desc: string;
-  badge?: string;
-  primary?: boolean;
-};
+type Props = { slug: string; title?: string; coreNodes?: CoreNodesV2 };
+type Resolved = { id: string; title: string; hint?: string; href: string };
 
-function buildNodes(slug: string): CoreNode[] {
-  const base = "/c/" + slug + "/v2";
-  return [
-    { key: "mapa", href: base + "/mapa", label: "Mapa", desc: "Começar por aqui: visão geral do universo.", badge: "Eixo", primary: true },
-    { key: "linha", href: base + "/linha", label: "Linha", desc: "Fatos, tópicos e entradas conectadas.", badge: "Rastro" },
-    { key: "linha-do-tempo", href: base + "/linha-do-tempo", label: "Linha do tempo", desc: "Cronologia e memória em camadas." },
-    { key: "provas", href: base + "/provas", label: "Provas", desc: "Evidências, fontes e checagens." },
-    { key: "trilhas", href: base + "/trilhas", label: "Trilhas", desc: "Percursos guiados: do básico ao profundo.", badge: "Guia" },
-    { key: "debate", href: base + "/debate", label: "Debate", desc: "Discussão e sínteses do coletivo." },
-  ];
+const DOOR_KEYS = new Set(["mapa","linha","linha-do-tempo","provas","trilhas","debate","hub"]);
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object";
 }
 
-export default function Cv2CoreNodes(props: { slug: string; title?: string }) {
-  const slug = props.slug;
-  const title = props.title;
-  const nodes = buildNodes(slug);
+function resolveHref(slug: string, id: string): string {
+  const s = encodeURIComponent(slug);
+  if (id === "hub") return "/c/" + s + "/v2";
+  if (DOOR_KEYS.has(id)) return "/c/" + s + "/v2/" + encodeURIComponent(id);
+  return "/c/" + s + "/v2/mapa?focus=" + encodeURIComponent(id);
+}
 
+function resolveCoreNodes(slug: string, coreNodes?: CoreNodesV2): Resolved[] {
+  if (!coreNodes || !coreNodes.length) return [];
+  const out: Resolved[] = [];
+  for (const v of coreNodes) {
+    if (typeof v === "string") {
+      const id = v.trim();
+      if (!id) continue;
+      out.push({ id, title: id, href: resolveHref(slug, id) });
+      continue;
+    }
+    if (isRecord(v)) {
+      const id = typeof v["id"] === "string" ? (v["id"] as string).trim() : "";
+      if (!id) continue;
+      const title = (typeof v["title"] === "string" && (v["title"] as string).trim()) ? (v["title"] as string).trim() : id;
+      const hint = (typeof v["hint"] === "string" && (v["hint"] as string).trim()) ? (v["hint"] as string).trim() : undefined;
+      out.push({ id, title, hint, href: resolveHref(slug, id) });
+    }
+  }
+  const seen = new Set<string>();
+  const dedup: Resolved[] = [];
+  for (const n of out) {
+    if (seen.has(n.id)) continue;
+    seen.add(n.id);
+    dedup.push(n);
+    if (dedup.length >= 9) break;
+  }
+  return dedup;
+}
+
+export default function Cv2CoreNodes(props: Props) {
+  const nodes = resolveCoreNodes(props.slug, props.coreNodes);
+  if (!nodes.length) return null;
   return (
-    <section className="cv2-coreWrap" aria-label="Núcleo do universo">
-      <div className="cv2-coreHead">
-        <div className="cv2-coreTitle">Núcleo do universo</div>
-        <div className="cv2-coreSub">{title ? title : slug}</div>
+    <section className="cv2-core" aria-label="Núcleo do caderno">
+      <div className="cv2-core__head">
+        <div className="cv2-core__kicker">Núcleo</div>
+        <div className="cv2-core__title">{props.title ? props.title : "5–9 nós centrais"}</div>
+        <div className="cv2-core__sub">Portas e nós-chave — comece pelo mapa e atravesse o universo.</div>
       </div>
-
-      <div className="cv2-coreGrid">
+      <div className="cv2-core__pills">
         {nodes.map((n) => (
-          <Link
-            key={n.key}
-            href={n.href}
-            prefetch={false}
-            className={n.primary ? "cv2-coreCard cv2-coreCard--primary" : "cv2-coreCard"}
-          >
-            <div className="cv2-coreCardTop">
-              <div className="cv2-coreCardLabel">{n.label}</div>
-              {n.badge ? <div className="cv2-coreBadge">{n.badge}</div> : null}
-            </div>
-            <div className="cv2-coreCardDesc">{n.desc}</div>
-            {n.primary ? <div className="cv2-coreCta">Começar pelo Mapa →</div> : <div className="cv2-coreCta">Abrir →</div>}
+          <Link key={n.id} className="cv2-pill" href={n.href} title={n.hint ? n.hint : n.id}>
+            {n.title}
           </Link>
         ))}
       </div>

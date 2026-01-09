@@ -3,11 +3,16 @@
 
 export type UiDefault = "v1" | "v2";
 
+
+export type CoreNodeV2 = { id: string; title?: string; hint?: string };
+export type CoreNodesV2 = Array<string | CoreNodeV2>;
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [k: string]: JsonValue };
 
 export type MetaV2 = {
-  slug: string;
+  
+  coreNodes?: CoreNodesV2;
+slug: string;
   title: string;
   subtitle?: string;
   mood: string;

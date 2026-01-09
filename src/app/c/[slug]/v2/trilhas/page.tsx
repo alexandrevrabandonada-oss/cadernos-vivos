@@ -5,17 +5,15 @@ import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
 import Cv2DomFilterClient from "@/components/v2/Cv2DomFilterClient";
-import V2Portals from "@/components/v2/V2Portals";
 import Cv2MapFirstCta from "@/components/v2/Cv2MapFirstCta";
-
+import Cv2CoreNodes from "@/components/v2/Cv2CoreNodes";
+import Cv2PortalsCurated from "@/components/v2/Cv2PortalsCurated";
+import Cv2DoorGuide from "@/components/v2/Cv2DoorGuide";
 type SlugParams = { slug: string };
-
 async function getSlug(params: unknown): Promise<string> {
   const p = (await Promise.resolve(params)) as Partial<SlugParams>;
   return typeof p?.slug === "string" ? p.slug : "";
 }
-
-
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const slug = await getSlug(params);
   const meta = await cvReadMetaLoose(slug);
@@ -38,12 +36,15 @@ export default async function Page({ params }: { params: unknown }) {
       <Cv2DomFilterClient rootId="cv2-trilhas-root" placeholder="Filtrar trilhas..." pageSize={24} enablePager />
     <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto" }}>
       <V2Nav slug={slug} active="trilhas"  />
+      <Cv2DoorGuide slug={slug} active="trilhas" meta={caderno.meta} />
       <V2QuickNav />
       <Cv2MapFirstCta slug={slug} current="trilhas" />
       <div style={{ marginTop: 12 }}>
         <TrilhasV2 slug={slug} title={title} />
       </div>
-      <V2Portals slug={slug} active="trilhas" />
+      <Cv2CoreNodes slug={slug} coreNodes={caderno.meta.coreNodes} />
+
+      <Cv2PortalsCurated slug={slug} active="trilhas" />
     </main>
     </div>
   );

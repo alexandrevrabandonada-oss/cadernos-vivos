@@ -1326,3 +1326,129 @@ main, article, section { font-size: calc(1rem * var(--cv-scale)); }
   .cv2-layout{grid-template-columns:1fr;}
   .cv2-rail{position:relative;top:auto;}
 }
+
+/* CV2: portals curated (coreNodes) */
+.cv2-portals-curated {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+}
+.cv2-portals-curated__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.cv2-portals-curated__kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.cv2-portals-curated__title {
+  font-size: 14px;
+  font-weight: 900;
+}
+.cv2-portals-curated__sub {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.cv2-portals-curated__next {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.cv2-portal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.18);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 800;
+}
+.cv2-portals-curated__relHead {
+  font-size: 12px;
+  font-weight: 900;
+  opacity: 0.85;
+  margin: 6px 0 8px;
+}
+.cv2-portals-curated__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 720px) {
+  .cv2-portals-curated__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.cv2-portal-card {
+  display: block;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.18);
+  text-decoration: none;
+}
+.cv2-portal-card--next {
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.08);
+}
+.cv2-portal-card__title {
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+.cv2-portal-card__desc {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.cv2-portal-card:hover {
+  transform: translateY(-1px);
+}
+/* ============================= */
+/* CV2 — Door Guide (orientation) */
+/* ============================= */
+.cv2-doorGuide{border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:14px 14px 12px;background:rgba(0,0,0,.24);backdrop-filter:saturate(120%) blur(10px);}
+.cv2-doorGuide__row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between;}
+.cv2-doorGuide__kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.7;}
+.cv2-doorGuide__label{font-size:16px;font-weight:800;letter-spacing:.01em;}
+.cv2-doorGuide__actions{display:flex;gap:10px;flex-wrap:wrap;}
+.cv2-doorGuide__btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.14);text-decoration:none;background:rgba(255,255,255,.03);}
+.cv2-doorGuide__btn:hover{border-color:rgba(255,255,255,.24);background:rgba(255,255,255,.05);}
+.cv2-doorGuide__btn.is-primary{border-color:rgba(255,220,120,.35);background:rgba(255,220,120,.08);}
+.cv2-doorGuide__related{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.cv2-doorGuide__pill{display:inline-flex;align-items:center;padding:8px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);text-decoration:none;font-size:12px;opacity:.9;background:rgba(255,255,255,.02);}
+.cv2-doorGuide__pill:hover{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.04);}
+/* ============================= */
+/* CV2 — Hub Tighten (mindmap)   */
+/* ============================= */
+.cv2-mindmap{position:relative;max-width:980px;margin:18px auto 8px;min-height:560px;}
+.cv2-mindmapLines{opacity:.9;}
+.cv2-mindmapNode{transform:translate(-50%,-50%);max-width:220px;}
+.cv2-mindmapNodeA{display:block;padding:10px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.28);text-decoration:none;}
+.cv2-mindmapNodeA:hover{border-color:rgba(255,255,255,.22);background:rgba(0,0,0,.34);}
+.cv2-mindmapNode.is-active .cv2-mindmapNodeA{border-color:rgba(255,220,120,.35);box-shadow:0 0 0 1px rgba(255,220,120,.10);}
+.cv2-mindmapNodeLabel{font-weight:800;letter-spacing:.01em;}
+.cv2-mindmapNodeDesc{margin-top:3px;font-size:12px;opacity:.78;line-height:1.25;}
+.cv2-mindmapCenterCard{padding:14px 14px 12px;}
+.cv2-mindmapHint{font-size:12px;opacity:.72;margin-top:4px;}
+.cv2-mindmapCtas{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+@media (max-width: 900px){.cv2-mindmap{min-height:520px}.cv2-mindmapNode{max-width:180px}}
+@media (max-width: 560px){.cv2-mindmapNode{max-width:160px}}
+/* ================================ */
+/* CV2 — Hub Focus: edge hints via data-attr */
+/* ================================ */
+.cv2-mindmap [data-cv2-edgehint="1"]{
+  display:none !important;
+}
+

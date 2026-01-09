@@ -42,4 +42,6 @@ next-env.d.ts
 
 # Cadernos Vivos — local patch backups
 tools/_patch_backup/
-
+# CV — ignore patch backups
+tools/_patch_backup/
+tools/_patch_backup/**

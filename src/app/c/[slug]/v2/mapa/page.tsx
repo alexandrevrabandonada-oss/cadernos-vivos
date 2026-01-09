@@ -7,14 +7,12 @@ import Cv2MapRail from "@/components/v2/Cv2MapRail";
 import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
-import V2Portals from "@/components/v2/V2Portals";
-
+import Cv2CoreNodes from "@/components/v2/Cv2CoreNodes";
+import Cv2PortalsCurated from "@/components/v2/Cv2PortalsCurated";
+import Cv2DoorGuide from "@/components/v2/Cv2DoorGuide";
 type AccentStyle = CSSProperties & Record<"--accent", string>;
-
-
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-
   const meta = await cvReadMetaLoose(slug);
   const title = (typeof meta.title === "string" && meta.title.trim().length) ? meta.title.trim() : slug;
   const m = meta as unknown as Record<string, unknown>;
@@ -36,7 +34,6 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     if (err && err.code === "ENOENT") return notFound();
     throw e;
   }
-
   const title = data.meta?.title ?? slug;
   const accent = data.meta?.accent ?? "#F7C600";
   const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
@@ -45,16 +42,19 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   return (
     <main style={{ padding: 14, maxWidth: 1180, margin: "0 auto", ...s }}>
       <V2Nav slug={slug} active="mapa"  />
+      <Cv2DoorGuide slug={slug} active="mapa" meta={data.meta} />
       <V2QuickNav />
             <div className="cv2-map-layout" style={{ marginTop: 12 }}>
         <section className="cv2-map-main" aria-label="Mapa do universo">
           <MapaV2Interactive slug={slug} title={title} mapa={mapa} />
         </section>
         <aside className="cv2-map-rail" aria-label="Corredor de portas do mapa">
+          <Cv2CoreNodes slug={slug} title={"Núcleo do mapa"} coreNodes={data.meta.coreNodes} />
+
           <Cv2MapRail slug={slug} title={title} meta={data.meta} />
         </aside>
       </div>
-      <V2Portals slug={slug} active="mapa" />
+      <Cv2PortalsCurated slug={slug} active="mapa" />
     </main>
   );
 }

@@ -9,10 +9,11 @@ import type { Trail, TrailStep } from "@/components/v2/TrilhasV2";
 import { loadCadernoV2 } from "@/lib/v2";
 import type { Metadata } from "next";
 import { cvReadMetaLoose } from "@/lib/v2/load";
-import V2Portals from "@/components/v2/V2Portals";
 import Cv2MapFirstCta from "@/components/v2/Cv2MapFirstCta";
 import Cv2UniverseRail from "@/components/v2/Cv2UniverseRail";
-
+import Cv2CoreNodes from "@/components/v2/Cv2CoreNodes";
+import Cv2PortalsCurated from "@/components/v2/Cv2PortalsCurated";
+import Cv2DoorGuide from "@/components/v2/Cv2DoorGuide";
 async function getSlug(params: Promise<{ slug: string; id: string }>): Promise<string> {
   try {
     const p = await params;
@@ -24,19 +25,14 @@ async function getSlug(params: Promise<{ slug: string; id: string }>): Promise<s
     return slug;
   }
 }
-
-
 type AccentStyle = CSSProperties & Record<"--accent", string>;
 type AnyObj = Record<string, unknown>;
-
 function isObj(v: unknown): v is AnyObj {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
-
 function asStr(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
-
 function trailFromUnknown(v: unknown, idx: number): Trail | null {
   if (!isObj(v)) return null;
   const id = asStr(v["id"]) || ("trilha-" + String(idx + 1));
@@ -55,7 +51,6 @@ function trailFromUnknown(v: unknown, idx: number): Trail | null {
     : [];
   return { id, title: id, summary: summary || undefined, steps: steps.length ? steps : undefined };
 }
-
 async function loadTrilhasJson(slug: string): Promise<unknown | null> {
   try {
     const p = join(process.cwd(), "content", "cadernos", slug, "trilhas.json");
@@ -65,7 +60,6 @@ async function loadTrilhasJson(slug: string): Promise<unknown | null> {
     return null;
   }
 }
-
 function trailsFromJson(v: unknown): Trail[] {
   const arr: unknown[] = Array.isArray(v)
     ? v
@@ -79,8 +73,6 @@ function trailsFromJson(v: unknown): Trail[] {
   }
   return out;
 }
-
-
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; id: string }> }): Promise<Metadata> {
   const slug = await getSlug(params);
   const meta = await cvReadMetaLoose(slug);
@@ -107,12 +99,10 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
   }
   const accent = data.meta?.accent ?? "#F7C600";
   const s: AccentStyle = { ["--accent"]: accent } as AccentStyle;
-
   const json = await loadTrilhasJson(slug);
   const trails = trailsFromJson(json);
   const trail = trails.find((t) => t.id === wanted) ?? null;
   if (!trail) return notFound();
-
   const back = "/c/" + slug + "/v2/trilhas";
 
   return (
@@ -120,6 +110,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
   <Cv2UniverseRail slug={slug} active="trilhas" />
   <main style={{ padding: 14, maxWidth: 1100, margin: "0 auto", ...s }}>
       <V2Nav slug={slug} active="trilhas"  />
+      <Cv2DoorGuide slug={slug} active="trilhas" meta={data.meta} />
       <V2QuickNav />
       <Cv2MapFirstCta slug={slug} current="trilhas" />
 
@@ -196,7 +187,9 @@ export default async function Page({ params }: { params: Promise<{ slug: string;
           Dica: steps podem apontar para V2 (mapa, debate, provas, linha do tempo) usando href.
         </div>
       </div>
-      <V2Portals slug={slug} active="trilhas" />
+      <Cv2CoreNodes slug={slug} coreNodes={data.meta.coreNodes} />
+
+      <Cv2PortalsCurated slug={slug} active="trilhas" />
     </main>
 </div>
   );

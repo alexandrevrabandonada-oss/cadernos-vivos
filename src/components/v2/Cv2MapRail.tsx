@@ -1,23 +1,20 @@
-
 import Link from "next/link";
-import React from "react";
+import type { CoreNodesV2 } from "@/lib/v2/types";
+import { coreNodesToDoorOrder } from "@/lib/v2/doors";
 
-type MetaLike = Record<string, unknown> | null | undefined;
+type MetaLike = { coreNodes?: CoreNodesV2 };
 
 type RailProps = {
   slug: string;
   title?: string;
-  meta?: MetaLike | unknown;
+  coreNodes?: CoreNodesV2;
+  meta?: MetaLike;
 };
 
-type RailPage = {
-  id: string;
-  label: string;
-  href: (slug: string) => string;
-};
+type RailDoorId = "mapa" | "linha" | "linha-do-tempo" | "provas" | "trilhas" | "debate";
+type RailPage = { id: RailDoorId; label: string; href: (slug: string) => string };
 
 const PAGES: RailPage[] = [
-  { id: "hub", label: "Hub", href: (s) => "/c/" + encodeURIComponent(s) + "/v2" },
   { id: "mapa", label: "Mapa", href: (s) => "/c/" + encodeURIComponent(s) + "/v2/mapa" },
   { id: "linha", label: "Linha", href: (s) => "/c/" + encodeURIComponent(s) + "/v2/linha" },
   { id: "linha-do-tempo", label: "Tempo", href: (s) => "/c/" + encodeURIComponent(s) + "/v2/linha-do-tempo" },
@@ -26,14 +23,27 @@ const PAGES: RailPage[] = [
   { id: "debate", label: "Debate", href: (s) => "/c/" + encodeURIComponent(s) + "/v2/debate" },
 ];
 
-function safeSlug(v: unknown): string {
-  return (typeof v === "string" ? v : "").trim();
+function orderPages(coreNodes?: CoreNodesV2): RailPage[] {
+  const order = coreNodesToDoorOrder(coreNodes);
+  const out: RailPage[] = [];
+  for (const id of order) {
+    const p = PAGES.find((x) => x.id === id);
+    if (p) out.push(p);
+  }
+  // garante o eixo (mapa) sempre presente
+  if (!out.some((p) => p.id === "mapa")) out.unshift(PAGES[0]);
+  // adiciona portas restantes (ex.: linha-do-tempo) mantendo ordem local
+  for (const p of PAGES) {
+    if (!out.some((x) => x.id === p.id)) out.push(p);
+  }
+  return out;
 }
 
 export function Cv2MapRail(props: RailProps) {
-  const slug = safeSlug(props.slug);
-  if (!slug) return null;
-  const title = (typeof props.title === "string" && props.title.trim().length) ? props.title.trim() : slug;
+  const slug = props.slug;
+  const title = props.title ? props.title : "Mapa";
+  const cn = props.coreNodes ? props.coreNodes : (props.meta ? props.meta.coreNodes : undefined);
+  const pages = orderPages(cn);
 
   return (
     <aside className="cv2-mapRail" aria-label="Corredor de portas">
@@ -44,7 +54,7 @@ export function Cv2MapRail(props: RailProps) {
         </div>
 
         <nav className="cv2-mapRail__nav" aria-label="Portas do universo">
-          {PAGES.map((p) => (
+          {pages.map((p) => (
             <Link key={p.id} className={"cv2-mapRail__a" + (p.id === "mapa" ? " is-axis" : "")} href={p.href(slug)}>
               <span className="cv2-mapRail__dot" aria-hidden="true" />
               <span className="cv2-mapRail__txt">{p.label}</span>
@@ -59,3 +69,4 @@ export function Cv2MapRail(props: RailProps) {
 }
 
 export default Cv2MapRail;
+

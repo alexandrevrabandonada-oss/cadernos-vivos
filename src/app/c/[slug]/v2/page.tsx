@@ -30,10 +30,10 @@ import { cvReadMetaLoose } from "@/lib/v2/load";
 
 
 import type { Metadata } from "next";
-import Cv2CoreNodes from "@/components/v2/Cv2CoreNodes";
-import V2Portals from "@/components/v2/V2Portals";
 import Cv2MapFirstCta from "@/components/v2/Cv2MapFirstCta";
 import Cv2UniverseRail from "@/components/v2/Cv2UniverseRail";
+import Cv2CoreNodes from "@/components/v2/Cv2CoreNodes";
+import Cv2PortalsCurated from "@/components/v2/Cv2PortalsCurated";
 
 
 
@@ -318,9 +318,8 @@ export default async function Page({ params }: { params: AnyParams }) {
         <Cv2MapFirstCta slug={slug} current="hub" />
 
         {/* Núcleo do universo (Concreto Zen) */}
-        <Cv2CoreNodes slug={slug} title={title0} />
       {/* CV2_MINDMAP_HUB */}
-      <Cv2MindmapHubClient slug={slug} />
+      <Cv2MindmapHubClient slug={slug} meta={caderno.meta} />
 
 
 
@@ -410,7 +409,9 @@ export default async function Page({ params }: { params: AnyParams }) {
 
 
             {/* CV2_PORTALS */}
-      <V2Portals slug={slug} active="hub" />
+      <Cv2CoreNodes slug={slug} coreNodes={caderno.meta.coreNodes} />
+
+      <Cv2PortalsCurated slug={slug} active="hub" />
 </main>
 </div>
 
@@ -440,3 +441,5 @@ export default async function Page({ params }: { params: AnyParams }) {
 
 
 }
+
+

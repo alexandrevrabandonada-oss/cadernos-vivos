@@ -1,6 +1,5 @@
 import type {
-  AcervoV2, CadernoV2, DebateV2, JsonValue, MapaV2, MetaV2, RegistroV2, UiDefault
-} from "./types";
+  AcervoV2, CadernoV2, DebateV2, JsonValue, MapaV2, MetaV2, RegistroV2, UiDefault, CoreNodeV2, CoreNodesV2} from "./types";
 
 function asObj(v: unknown): Record<string, unknown> | null {
   if (!v || typeof v !== "object") return null;
@@ -24,6 +23,39 @@ function asJson(v: unknown): JsonValue {
   return null;
 }
 
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object";
+}
+
+function extractCoreNodesRaw(o: unknown): unknown {
+  if (!isRecord(o)) return undefined;
+  const direct = o["coreNodes"];
+  if (Array.isArray(direct)) return direct;
+  const core = o["core"];
+  if (isRecord(core)) {
+    const nodes = core["nodes"];
+    if (Array.isArray(nodes)) return nodes;
+  }
+  return undefined;
+}
+
+function normalizeCoreNodesV2(raw: unknown): CoreNodesV2 | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: Array<string | CoreNodeV2> = [];
+  for (const v of raw) {
+    if (typeof v === "string" && v.trim()) { out.push(v.trim()); continue; }
+    if (isRecord(v)) {
+      const id = typeof v["id"] === "string" ? (v["id"] as string).trim() : "";
+      if (!id) continue;
+      const title = typeof v["title"] === "string" ? (v["title"] as string) : undefined;
+      const hint = typeof v["hint"] === "string" ? (v["hint"] as string) : undefined;
+      out.push({ id, title, hint });
+    }
+  }
+  return out.length ? out.slice(0, 9) : undefined;
+}
+
 export function normalizeMetaV2(raw: unknown, fallbackSlug: string): MetaV2 {
   const o = asObj(raw) || {};
   const slug = asStr(o["slug"]) || fallbackSlug;
@@ -37,7 +69,8 @@ export function normalizeMetaV2(raw: unknown, fallbackSlug: string): MetaV2 {
   const uiDefRaw = uiObj ? asStr(uiObj["default"]) : undefined;
   const uiDefault = (uiDefRaw as UiDefault | undefined) || "v1";
 
-  const meta: MetaV2 = { slug, title, mood, ui: { default: uiDefault } };
+  const coreNodes = normalizeCoreNodesV2(extractCoreNodesRaw(o)) ?? ["mapa","linha","provas","trilhas","debate"];
+const meta: MetaV2 = { slug, title, mood, ui: { default: uiDefault }, coreNodes };
   if (subtitle) meta.subtitle = subtitle;
   if (accent) meta.accent = accent;
   if (ethos) meta.ethos = ethos;
