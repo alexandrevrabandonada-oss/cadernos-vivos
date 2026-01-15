@@ -71,3 +71,16 @@ function WriteReport([string]$name, [string]$text) {
   Write-Host ('[OK] Report: ' + $p)
   return $p
 }
+# === 
+CV HOTFIX (B8G5): RunNpm robust
+ (cmd.exe) ===
+function RunNpm {
+  param([Parameter(Mandatory=True)][string[]]$Args)
+  if(-not $Args){ return }
+  $cmdLine = 'npm ' + ($Args -join ' ')
+  & $env:ComSpec /d /c $cmdLine
+  if($LASTEXITCODE -ne 0){ throw ('[STOP] npm falhou (exit ' + $LASTEXITCODE + '): ' + $cmdLine) }
+}
+# === END 
+CV HOTFIX (B8G5): RunNpm robust
+ ===

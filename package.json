@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint --ignore-pattern tools/_patch_backup/**"
+    "lint": "eslint src --cache"
   },
   "dependencies": {
     "clsx": "^2.1.1",

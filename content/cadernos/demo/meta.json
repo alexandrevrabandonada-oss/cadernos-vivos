@@ -1,0 +1,20 @@
+{
+  "title": "Demo — Caderno Vivo",
+  "subtitle": "Universo Concreto Zen (seed)",
+  "ui": { "default": "v2" },
+  "coreNodes": [
+    { "id": "hub", "label": "Hub", "kind": "hub" },
+    { "id": "mapa", "label": "Mapa", "kind": "mapa" },
+    { "id": "linha", "label": "Linha", "kind": "linha" },
+    { "id": "provas", "label": "Provas", "kind": "provas" },
+    { "id": "trilhas", "label": "Trilhas", "kind": "trilhas" },
+    { "id": "debate", "label": "Debate", "kind": "debate" }
+  ],
+  "portals": [
+    { "from": "hub", "to": "mapa", "label": "Explorar no mapa" },
+    { "from": "hub", "to": "linha", "label": "Ver a linha do tempo" },
+    { "from": "hub", "to": "provas", "label": "Abrir provas" },
+    { "from": "hub", "to": "trilhas", "label": "Entrar nas trilhas" },
+    { "from": "hub", "to": "debate", "label": "Ir ao debate" }
+  ]
+}
