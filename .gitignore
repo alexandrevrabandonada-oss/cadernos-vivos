@@ -45,3 +45,15 @@ tools/_patch_backup/
 # CV — ignore patch backups
 tools/_patch_backup/
 tools/_patch_backup/**
+
+# --- cadernos-vivos baseline clean ---
+.eslintcache
+node_modules/
+.next/
+out/
+.turbo/
+coverage/
+reports/**
+!reports/
+!reports/README.md
+Thumbs.db
