@@ -57,3 +57,6 @@ reports/**
 !reports/
 !reports/README.md
 Thumbs.db
+
+# --- tools scratch (local) ---
+tools/_scratch/
