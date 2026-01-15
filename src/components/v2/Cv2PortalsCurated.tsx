@@ -2,17 +2,23 @@ import Link from "next/link";
 import type { CoreNodesV2 } from "@/lib/v2/types";
 import { coreNodesToDoorOrder, doorById, pickActiveDoor, pickNextDoor, pickRelatedDoors } from "@/lib/v2/doors";
 
-type Props = { slug: string; active?: string; current?: string; coreNodes?: CoreNodesV2 };
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+type Props = { slug: string; active?: string; current?: string; coreNodes?: CoreNodesV2; meta?: unknown };
 
 export default function Cv2PortalsCurated(props: Props) {
   const active = pickActiveDoor(props.active, props.current);
-  const order = coreNodesToDoorOrder(props.coreNodes);
+  const coreNodes =
+  props.coreNodes ??
+  (isRecord(props.meta) ? (props.meta["coreNodes"] as CoreNodesV2 | undefined) : undefined);
+const order = coreNodesToDoorOrder(coreNodes);
   const next = pickNextDoor(order, active);
   const rel = pickRelatedDoors(order, active, next);
   const nextDoor = doorById(next);
 
   return (
-    <section className="cv2-portals-curated" aria-label="Portais do universo">
+    <section className="cv2-portals-curated" aria-label="Portais do universo" data-cv2="portals-curated">
       <div className="cv2-portals-curated__head">
         <div className="cv2-portals-curated__kicker">Portais</div>
         <div className="cv2-portals-curated__title">Próxima porta</div>
